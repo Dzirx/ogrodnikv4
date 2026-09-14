@@ -50,7 +50,15 @@
   .watki a { display: block; padding: 0.5rem 1rem; text-decoration: none; color: var(--tekst); font-size: 0.9rem; }
   .watki a:hover { background: var(--tlo); }
   .watki .biezacy { background: var(--akcent-jasny); font-weight: 600; }
-  .zrodla-wybor { max-height: 16rem; overflow-y: auto; }
+  .nowa-rozmowa {
+    display: block; text-align: center; padding: 0.5rem; border: 1px solid var(--ramka);
+    border-radius: 6px; text-decoration: none; font-weight: 500;
+  }
+  .nowa-rozmowa:hover { background: var(--akcent-jasny); }
+  .wybor-zrodel { margin-top: 1rem; border-top: 1px solid var(--ramka); padding-top: 0.8rem; }
+  .wybor-zrodel > summary { cursor: pointer; color: var(--przygaszony); font-size: 0.9rem; }
+  .wybor-zrodel > summary:hover { color: var(--tekst); }
+  .zrodla-wybor { max-height: 16rem; overflow-y: auto; margin-top: 0.6rem; }
   .grupa-zrodel { margin-bottom: 0.6rem; }
   .naglowek-grupy { margin-bottom: 0.2rem; }
   .grupa-zrodel label:not(.naglowek-grupy) { padding-left: 1rem; }
@@ -75,41 +83,19 @@
 
 <div class="uklad{% if not podglad %} bez-podgladu{% endif %}">
 
+  {# Lewa kolumna to wylacznie historia rozmow i przycisk nowej - jak w
+     znanych czatach. Przedtem byly tu dwa identyczne wybory zrodel jeden pod
+     drugim (jeden dla nowego pytania, drugi dla otwartego watku) i nie dalo
+     sie odroznic, ktory jest ktory; historia lezala pod nimi, ledwo widoczna. #}
   <div class="kolumna">
-    <div class="naglowek">Rozmowy</div>
     <div class="tresc">
-      <form method="post" action="/pytania">
-        <div class="pole">
-          <input type="text" name="pytanie" placeholder="Nowe pytanie" required>
-        </div>
-        {% if zrodla %}
-        <div class="pole zrodla-wybor">
-          <label class="podpowiedz">Pytaj o:</label>
-          {{ wybor_zrodel(pogrupowane, None) }}
-        </div>
-        {% endif %}
-        <button type="submit">Zapytaj</button>
-      </form>
+      <a href="/" class="nowa-rozmowa">+ Nowa rozmowa</a>
     </div>
-    {% if rozmowa %}
-    {# Przedtem wybor ksiazek byl tylko w formularzu nowego pytania - po
-       wejsciu w watek nie bylo widac, z czego korzysta, ani jak to zmienic. #}
-    <div class="tresc" style="border-top: 1px solid var(--ramka);">
-      <form method="post" action="/rozmowy/{{ rozmowa.id }}/zrodla">
-        <label class="podpowiedz">Ta rozmowa czerpie z:</label>
-        <div class="zrodla-wybor">
-          {{ wybor_zrodel(pogrupowane, rozmowa.sources) }}
-        </div>
-        <button type="submit" class="drugorzedny">Zmień zakres</button>
-        <p class="podpowiedz">Zmiana dotyczy kolejnych pytań. Wcześniejsze odpowiedzi
-        opierały się na tym, co było zaznaczone wtedy.</p>
-      </form>
-    </div>
-    {% endif %}
-
     <ul class="watki">
       {% for r in rozmowy %}
       <li><a href="/rozmowy/{{ r.id }}" class="{% if rozmowa and r.id == rozmowa.id %}biezacy{% endif %}">{{ r.title }}</a></li>
+      {% else %}
+      <li style="padding: 0.6rem 1rem;"><small class="podpowiedz">Jeszcze nie ma żadnych pytań.</small></li>
       {% endfor %}
     </ul>
   </div>
@@ -119,8 +105,18 @@
     <div class="tresc">
       {% if not rozmowa %}
         {% if zrodla %}
-        <p>Wpisz pytanie po lewej. Odpowiedź powstanie wyłącznie z Twoich źródeł —
-        przy każdej informacji zobaczysz, z której strony pochodzi.</p>
+        <p>Odpowiedź powstanie wyłącznie z Twoich źródeł — przy każdej informacji
+        zobaczysz, z której strony pochodzi.</p>
+        <form method="post" action="/pytania">
+          <div class="pole">
+            <input type="text" name="pytanie" placeholder="np. kiedy wysiewać rozsadę pomidora?" required autofocus>
+          </div>
+          <details class="wybor-zrodel">
+            <summary>Pytaj o: wszystkie książki ({{ zrodla|length }})</summary>
+            {{ wybor_zrodel(pogrupowane, None) }}
+          </details>
+          <p><button type="submit">Zapytaj</button></p>
+        </form>
         {% else %}
         <p class="pusto">Najpierw dodaj źródło w zakładce <a href="/zrodla">Źródła</a>.</p>
         {% endif %}
@@ -150,6 +146,24 @@
           <div class="pole"><input type="text" name="pytanie" placeholder="Zadaj kolejne pytanie" required autofocus></div>
           <button type="submit">Wyślij</button>
         </form>
+
+        {# Zwiniete: przy zwyklym zadawaniu pytan zakres jest ustawiony raz i
+           nie ma po co zajmowac miejsca. Podsumowanie w naglowku mowi, z czego
+           rozmowa czerpie, bez rozwijania. #}
+        <details class="wybor-zrodel">
+          <summary>
+            Czerpie z:
+            {%- if rozmowa.sources %} {{ rozmowa.sources|length }} z {{ zrodla|length }} książek
+            {%- else %} wszystkich książek ({{ zrodla|length }}){% endif %}
+          </summary>
+          <form method="post" action="/rozmowy/{{ rozmowa.id }}/zrodla">
+            {{ wybor_zrodel(pogrupowane, rozmowa.sources) }}
+            <p>
+              <button type="submit" class="drugorzedny">Zmień zakres</button>
+              <span class="podpowiedz">Dotyczy kolejnych pytań.</span>
+            </p>
+          </form>
+        </details>
       {% endif %}
     </div>
   </div>
