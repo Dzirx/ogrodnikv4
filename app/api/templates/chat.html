@@ -28,7 +28,7 @@
     cursor: pointer; vertical-align: super; line-height: 1.4;
   }
   .znacznik:hover { background: var(--akcent); color: #fff; }
-  .podglad-ramka { width: 100%; height: 75vh; border: 0; }
+  .podglad-strona { width: 100%; border: 1px solid var(--ramka); border-radius: 4px; }
   .cytat { font-style: italic; color: var(--przygaszony); border-left: 2px solid var(--ramka); padding-left: 0.7rem; margin: 0.5rem 0; }
   .czekam { color: var(--przygaszony); font-style: italic; }
   @media (max-width: 1100px) { .uklad, .uklad.bez-podgladu { grid-template-columns: 1fr; } }
@@ -107,9 +107,14 @@
   <div class="kolumna">
     <div class="naglowek">{{ podglad.source_title }} — strona {{ podglad.page }}</div>
     <div class="tresc">
-      <p class="cytat">{{ podglad.text }}</p>
       {% if podglad.source_kind == "pdf" %}
-      <iframe class="podglad-ramka" src="/zrodla/{{ podglad.source_id }}/plik#page={{ podglad.page }}"></iframe>
+      {# Obraz strony z podswietlonym cytatem, nie osadzony PDF: redaktor ma
+         od razu widziec, KTORE zdanie na stronie jest cytowane, zamiast
+         szukac go wsrod kilku tysiecy znakow. #}
+      <img class="podglad-strona" src="/zrodla/{{ podglad.source_id }}/strona/{{ podglad.page }}.png?chunk={{ podglad.chunk_id }}" alt="Strona {{ podglad.page }}">
+      <p><a href="/zrodla/{{ podglad.source_id }}/plik#page={{ podglad.page }}" target="_blank" rel="noopener">otwórz całą książkę</a></p>
+      {% else %}
+      <p class="cytat">{{ podglad.text }}</p>
       {% endif %}
     </div>
   </div>

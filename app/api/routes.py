@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 from app.db.base import get_db
 from app.db.models import Chunk, Conflict, Conversation, ConversationSource, Message, Page, Source
 from app.ingest.pipeline import add_source
+from app.ingest.podglad import render_strony
 from app.ingest.storage import download_bytes
 from app.tasks import queue, przetworz_zrodlo, odpowiedz_na_pytanie
 
@@ -75,6 +76,7 @@ def _podglad(db: Session, chunk_id: int | None) -> dict | None:
     page = db.get(Page, chunk.page_id)
     source = db.get(Source, chunk.source_id)
     return {
+        "chunk_id": chunk.id,
         "text": chunk.text,
         "page": page.number,
         "source_id": source.id,
@@ -169,6 +171,25 @@ async def dodaj_zrodlo(
     )
     queue.enqueue(przetworz_zrodlo, source_id, job_timeout=3600)
     return RedirectResponse("/zrodla", status_code=303)
+
+
+@router.get("/zrodla/{source_id}/strona/{numer}.png")
+def obraz_strony(source_id: int, numer: int, chunk: int | None = None, db: Session = Depends(get_db)):
+    """Strona źródła jako obraz, z podświetlonym cytowanym fragmentem.
+
+    Sam numer strony nie wystarcza: książkowa strona ma kilka tysięcy znaków
+    i szukanie na niej jednego zdania to dokładnie ta praca, której redaktor
+    miał nie wykonywać."""
+    source = db.get(Source, source_id)
+    if source is None or source.kind != "pdf":
+        raise HTTPException(404, "Nie ma takiego pliku PDF")
+
+    fragment = db.get(Chunk, chunk).text if chunk else None
+    try:
+        obraz = render_strony(download_bytes(source.object_key), numer, fragment)
+    except ValueError as exc:
+        raise HTTPException(404, str(exc))
+    return Response(content=obraz, media_type="image/png")
 
 
 @router.get("/zrodla/{source_id}/plik")
