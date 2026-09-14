@@ -2,7 +2,7 @@
 
 import fitz
 
-from app.ingest.podglad import _dopasuj_slowa, _normalizuj, render_strony
+from app.ingest.podglad import MINIMUM_SLOW, _dopasuj_slowa, _normalizuj, render_strony
 
 
 def _pdf_z_tekstem(tekst: str) -> bytes:
@@ -18,23 +18,23 @@ def test_normalizacja_zdejmuje_interpunkcje():
 
 
 def test_znajduje_slowa_cytatu():
-    strona = "rozsade na grunt wysiewa sie w drugiej polowie marca a potem sadzi".split()
-    cytat = "wysiewa sie w drugiej polowie marca".split()
-    assert _dopasuj_slowa(strona, cytat) == [3, 4, 5, 6, 7, 8]
+    strona = "na poczatku rozsade na grunt wysiewa sie w drugiej polowie marca a potem sadzi".split()
+    cytat = "rozsade na grunt wysiewa sie w drugiej polowie marca".split()
+    assert _dopasuj_slowa(strona, cytat) == [2, 3, 4, 5, 6, 7, 8, 9, 10]
 
 
 def test_pomija_slowa_spoza_cytatu():
     """Na marginesie ksiazki biegnie pionowy tytul rozdzialu, ktorego slowa
     PyMuPDF wplata w kolejnosc czytania. Zaznaczanie calego zakresu braloby je
     razem z trescia - redaktor widzialby zolty pasek przez pol strony."""
-    strona = "rozsade na DOMOWA grunt PRODUKCJA wysiewa sie w marcu".split()
-    cytat = "rozsade na grunt wysiewa sie w marcu".split()
+    strona = "rozsade na DOMOWA grunt PRODUKCJA wysiewa sie w drugiej polowie marca a potem sadzi".split()
+    cytat = "rozsade na grunt wysiewa sie w drugiej polowie marca a potem".split()
 
     indeksy = _dopasuj_slowa(strona, cytat)
 
     assert 2 not in indeksy  # DOMOWA
     assert 4 not in indeksy  # PRODUKCJA
-    assert indeksy == [0, 1, 3, 5, 6, 7, 8]
+    assert indeksy == [0, 1, 3, 5, 6, 7, 8, 9, 10, 11, 12]
 
 
 def test_nie_zaznacza_gdy_pokrycie_za_male():
@@ -47,7 +47,8 @@ def test_nie_zaznacza_gdy_pokrycie_za_male():
 
 
 def test_renderuje_strone_jako_png():
-    obraz = render_strony(_pdf_z_tekstem("Rozsade wysiewa sie w marcu."), 1, "Rozsade wysiewa sie")
+    tekst = "Rozsade na grunt wysiewa sie w drugiej polowie marca a potem sadzi."
+    obraz = render_strony(_pdf_z_tekstem(tekst), 1, tekst)
     assert obraz[:8] == b"\x89PNG\r\n\x1a\n"
 
 
@@ -56,3 +57,30 @@ def test_nieistniejaca_strona_daje_blad():
 
     with pytest.raises(ValueError):
         render_strony(_pdf_z_tekstem("cokolwiek"), 99)
+
+
+def test_zaznacza_poczatek_dlugiego_akapitu_gdy_dalej_sie_rwie():
+    """Akapit potrafi miec dziewiecdziesiat slow i przechodzic przez ramke albo
+    lamac sie miedzy kolumnami - wtedy dopasowanie urywa sie po kilkunastu
+    slowach, mimo ze wskazuje dokladnie to miejsce.
+
+    Przy progu "polowa akapitu" takie trafienie przepadalo i redaktor dostawal
+    strone bez zadnego zaznaczenia - dokladnie ten przypadek wyszedl na
+    stronie 33 ksiazki o pomidorach."""
+    akapit = "wapnowanie gleby pomidory najlepiej rosna w glebie o odczynie lekko kwasnym".split()
+    dalszy_ciag = ["slowo%d" % i for i in range(60)]
+    strona = akapit + ["ramka", "wazne", "swiezy", "obornik"] + dalszy_ciag
+
+    indeksy = _dopasuj_slowa(strona, akapit + dalszy_ciag)
+
+    assert len(indeksy) >= MINIMUM_SLOW
+    assert indeksy[0] == 0
+
+
+def test_krotkie_przypadkowe_trafienie_nie_wystarcza():
+    """Kilka pasujacych slow pod rzad zdarza sie przypadkiem - lepiej nie
+    zaznaczyc nic niz wskazac zle miejsce."""
+    strona = "pomidory lubia slonce a reszta strony jest zupelnie o czym innym".split()
+    cytat = "pomidory lubia slonce oraz cieplo i oslone od wiatru w ogrodzie".split()
+
+    assert len(_dopasuj_slowa(strona, cytat)) == 0

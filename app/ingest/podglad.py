@@ -15,6 +15,12 @@ import fitz
 
 SKALA = 2.0  # czytelnosc na ekranie
 
+# Ile slow pod rzad wystarczy, zeby uznac miejsce za znalezione.
+MINIMUM_SLOW = 8
+
+# Ile obcych slow wolno przeskoczyc w srodku (numer strony, podpis, przypis).
+DOPUSZCZALNE_WTRACENIA = 3
+
 
 def _normalizuj(slowo: str) -> str:
     """Do porownania slow: bez interpunkcji, malymi literami.
@@ -46,7 +52,7 @@ def _dopasuj_slowa(slowa_strony: list[str], slowa_cytatu: list[str]) -> list[int
         pozycja_cytatu = 1
         pominiete = 0
         pozycja = start + 1
-        while pozycja < len(slowa_strony) and pozycja_cytatu < len(slowa_cytatu) and pominiete <= 3:
+        while pozycja < len(slowa_strony) and pozycja_cytatu < len(slowa_cytatu) and pominiete <= DOPUSZCZALNE_WTRACENIA:
             if slowa_strony[pozycja] == slowa_cytatu[pozycja_cytatu]:
                 dopasowane.append(pozycja)
                 pozycja_cytatu += 1
@@ -57,9 +63,15 @@ def _dopasuj_slowa(slowa_strony: list[str], slowa_cytatu: list[str]) -> list[int
         if len(dopasowane) > len(najlepsze):
             najlepsze = dopasowane
 
-    # Ponizej polowy cytatu uznajemy, ze to nie jest to miejsce - lepiej nie
-    # zaznaczyc nic niz wskazac zly akapit.
-    if len(najlepsze) < max(4, len(slowa_cytatu) // 2):
+    # Prog jest staly, nie polowa cytatu. Akapit potrafi miec dziewiecdziesiat
+    # slow i przechodzic przez ramke albo lamac sie miedzy kolumnami - wtedy
+    # dopasowanie urywa sie po kilkunastu slowach, mimo ze wskazuje dokladnie
+    # to miejsce. Wymaganie polowy akapitu kasowalo takie trafienia i redaktor
+    # dostawal strone bez zadnego zaznaczenia.
+    #
+    # Osiem slow pod rzad w tej samej kolejnosci to juz nie przypadek, a
+    # zaznaczenie kawalka akapitu i tak prowadzi oko we wlasciwe miejsce.
+    if len(najlepsze) < MINIMUM_SLOW:
         return []
     return najlepsze
 
