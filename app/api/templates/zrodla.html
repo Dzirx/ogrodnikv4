@@ -38,7 +38,7 @@
   {% for z in zrodla %}
   <tr>
     <td>
-      {% if z.kind == "pdf" %}<a href="/zrodla/{{ z.id }}/plik" target="_blank" rel="noopener">{{ z.title }}</a>{% else %}{{ z.title }}{% endif %}
+      <a href="/zrodla/{{ z.id }}">{{ z.title }}</a>
       {% if z.author %}<br><span class="podpowiedz">{{ z.author }}</span>{% endif %}
     </td>
     <td>{% for e in z.labels %}<span class="etykieta">{{ e.name }}</span>{% else %}<span class="podpowiedz">—</span>{% endfor %}</td>

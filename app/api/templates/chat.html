@@ -1,4 +1,38 @@
 {% extends "base.html" %}
+
+{#
+  Etykiety mialy dotad tylko ozdobna role - dawalo sie je nadac i widac je bylo
+  na liscie, ale przy pytaniu zaznaczalo sie pojedyncze ksiazki. Redaktor mowi
+  o dwunastu ksiazkach i szesciudziesieciu warzywach, wiec przy tej skali
+  klikanie po jednej nie ma sensu. Grupa zaznacza sie jednym kliknieciem, tak
+  jak w NotebookLM.
+#}
+{% macro wybor_zrodel(pogrupowane, wybrane) %}
+  {% for etykieta, lista in pogrupowane %}
+  <div class="grupa-zrodel">
+    {% if etykieta %}
+    <label class="naglowek-grupy">
+      <input type="checkbox" class="zaznacz-grupe"> <strong>{{ etykieta }}</strong>
+    </label>
+    {% endif %}
+    {% for z in lista %}
+    <label><input type="checkbox" name="zrodla" value="{{ z.id }}"
+      {% if wybrane is none or not wybrane or z in wybrane %}checked{% endif %}> {{ z.title }}</label>
+    {% endfor %}
+  </div>
+  {% endfor %}
+  <script>
+    // Jedyny skrypt w panelu: zaznaczenie calej grupy. Bez niego redaktor
+    // klika po jednej ksiazce przy kazdym pytaniu.
+    document.querySelectorAll('.zaznacz-grupe').forEach(function (grupa) {
+      grupa.addEventListener('change', function () {
+        grupa.closest('.grupa-zrodel')
+          .querySelectorAll('input[name="zrodla"]')
+          .forEach(function (pole) { pole.checked = grupa.checked; });
+      });
+    });
+  </script>
+{% endmacro %}
 {% block title %}{% if rozmowa %}{{ rozmowa.title }}{% else %}Pytania{% endif %}{% endblock %}
 {% block style %}
 <style>
@@ -17,6 +51,9 @@
   .watki a:hover { background: var(--tlo); }
   .watki .biezacy { background: var(--akcent-jasny); font-weight: 600; }
   .zrodla-wybor { max-height: 16rem; overflow-y: auto; }
+  .grupa-zrodel { margin-bottom: 0.6rem; }
+  .naglowek-grupy { margin-bottom: 0.2rem; }
+  .grupa-zrodel label:not(.naglowek-grupy) { padding-left: 1rem; }
   .zrodla-wybor label { font-weight: 400; font-size: 0.9rem; display: flex; gap: 0.4rem; align-items: start; }
   .pytanie { background: var(--akcent); color: #fff; padding: 0.6rem 0.9rem; border-radius: 10px; margin: 0 0 1rem auto; max-width: 85%; width: fit-content; }
   .odpowiedz { margin-bottom: 2rem; }
@@ -48,14 +85,28 @@
         {% if zrodla %}
         <div class="pole zrodla-wybor">
           <label class="podpowiedz">Pytaj o:</label>
-          {% for z in zrodla %}
-          <label><input type="checkbox" name="zrodla" value="{{ z.id }}" checked> {{ z.title }}</label>
-          {% endfor %}
+          {{ wybor_zrodel(pogrupowane, None) }}
         </div>
         {% endif %}
         <button type="submit">Zapytaj</button>
       </form>
     </div>
+    {% if rozmowa %}
+    {# Przedtem wybor ksiazek byl tylko w formularzu nowego pytania - po
+       wejsciu w watek nie bylo widac, z czego korzysta, ani jak to zmienic. #}
+    <div class="tresc" style="border-top: 1px solid var(--ramka);">
+      <form method="post" action="/rozmowy/{{ rozmowa.id }}/zrodla">
+        <label class="podpowiedz">Ta rozmowa czerpie z:</label>
+        <div class="zrodla-wybor">
+          {{ wybor_zrodel(pogrupowane, rozmowa.sources) }}
+        </div>
+        <button type="submit" class="drugorzedny">Zmień zakres</button>
+        <p class="podpowiedz">Zmiana dotyczy kolejnych pytań. Wcześniejsze odpowiedzi
+        opierały się na tym, co było zaznaczone wtedy.</p>
+      </form>
+    </div>
+    {% endif %}
+
     <ul class="watki">
       {% for r in rozmowy %}
       <li><a href="/rozmowy/{{ r.id }}" class="{% if rozmowa and r.id == rozmowa.id %}biezacy{% endif %}">{{ r.title }}</a></li>
@@ -105,7 +156,12 @@
 
   {% if podglad %}
   <div class="kolumna">
-    <div class="naglowek">{{ podglad.source_title }} — strona {{ podglad.page }}</div>
+    <div class="naglowek" style="display:flex; justify-content:space-between; align-items:center; gap:0.5rem;">
+      <span>{{ podglad.source_title }} — strona {{ podglad.page }}</span>
+      {# Bez tego zamkniecie podgladu wymagalo recznego skasowania parametru
+         z adresu - nie bylo zadnego przycisku. #}
+      <a href="/rozmowy/{{ rozmowa.id }}" title="Zamknij podgląd" style="text-decoration:none; font-size:1.2rem;">✕</a>
+    </div>
     <div class="tresc">
       {% if podglad.source_kind == "pdf" %}
       {# Obraz strony z podswietlonym cytatem, nie osadzony PDF: redaktor ma

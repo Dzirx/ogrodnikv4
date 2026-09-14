@@ -25,6 +25,27 @@ def _wspolne(db: Session) -> dict:
     return {"liczba_konfliktow": db.query(Conflict).filter_by(status="open").count()}
 
 
+def _pogrupuj_zrodla(zrodla: list[Source]) -> list[tuple[str | None, list[Source]]]:
+    """Źródła w grupach po etykietach, żeby dało się zaznaczyć temat naraz.
+
+    Źródło z kilkoma etykietami trafia do każdej z nich - tak jak książka o
+    pomidorze i bioróżnorodności jest przydatna przy obu tematach. Źródła bez
+    etykiety idą na koniec, bez nagłówka."""
+    grupy: dict[str, list[Source]] = {}
+    bez_etykiety: list[Source] = []
+    for zrodlo in zrodla:
+        if zrodlo.labels:
+            for etykieta in zrodlo.labels:
+                grupy.setdefault(etykieta.name, []).append(zrodlo)
+        else:
+            bez_etykiety.append(zrodlo)
+
+    wynik: list[tuple[str | None, list[Source]]] = sorted(grupy.items())
+    if bez_etykiety:
+        wynik.append((None, bez_etykiety))
+    return wynik
+
+
 @router.get("/", response_class=HTMLResponse)
 def pytania(request: Request, db: Session = Depends(get_db)):
     return templates.TemplateResponse(
@@ -33,7 +54,8 @@ def pytania(request: Request, db: Session = Depends(get_db)):
             "request": request,
             "strona": "pytania",
             "rozmowy": db.query(Conversation).order_by(Conversation.id.desc()).all(),
-            "zrodla": db.query(Source).filter_by(status="ready").order_by(Source.title).all(),
+            "zrodla": (gotowe := db.query(Source).filter_by(status="ready").order_by(Source.title).all()),
+            "pogrupowane": _pogrupuj_zrodla(gotowe),
             "rozmowa": None,
             "wiadomosci": [],
             "podglad": None,
@@ -54,7 +76,8 @@ def rozmowa(request: Request, rozmowa_id: int, podglad: int | None = None, db: S
             "request": request,
             "strona": "pytania",
             "rozmowy": db.query(Conversation).order_by(Conversation.id.desc()).all(),
-            "zrodla": db.query(Source).filter_by(status="ready").order_by(Source.title).all(),
+            "zrodla": (gotowe := db.query(Source).filter_by(status="ready").order_by(Source.title).all()),
+            "pogrupowane": _pogrupuj_zrodla(gotowe),
             "rozmowa": conversation,
             "wiadomosci": db.query(Message).filter_by(conversation_id=rozmowa_id).order_by(Message.id).all(),
             "podglad": _podglad(db, podglad),
@@ -126,6 +149,23 @@ def _zapytaj(db: Session, rozmowa_id: int, tekst: str) -> None:
     queue.enqueue(odpowiedz_na_pytanie, odpowiedz.id, job_timeout=600)
 
 
+@router.post("/rozmowy/{rozmowa_id}/zrodla")
+def zmien_zakres(rozmowa_id: int, zrodla: list[int] = Form(default=[]), db: Session = Depends(get_db)):
+    """Zmiana zakresu źródeł rozmowy.
+
+    Dotyczy kolejnych pytań. Wcześniejszych odpowiedzi nie ruszamy: opierały
+    się na tym, co było zaznaczone wtedy, i przepisywanie tego wstecz
+    znaczyłoby, że cytaty przestają odpowiadać temu, co redaktor widział."""
+    if db.get(Conversation, rozmowa_id) is None:
+        raise HTTPException(404, "Nie ma takiej rozmowy")
+
+    db.query(ConversationSource).filter_by(conversation_id=rozmowa_id).delete()
+    for source_id in zrodla:
+        db.add(ConversationSource(conversation_id=rozmowa_id, source_id=source_id))
+    db.commit()
+    return RedirectResponse(f"/rozmowy/{rozmowa_id}", status_code=303)
+
+
 @router.get("/zrodla", response_class=HTMLResponse)
 def zrodla(request: Request, blad: str | None = None, db: Session = Depends(get_db)):
     wszystkie = db.query(Source).order_by(Source.id.desc()).all()
@@ -171,6 +211,37 @@ async def dodaj_zrodlo(
     )
     queue.enqueue(przetworz_zrodlo, source_id, job_timeout=3600)
     return RedirectResponse("/zrodla", status_code=303)
+
+
+@router.get("/zrodla/{source_id}", response_class=HTMLResponse)
+def zrodlo(request: Request, source_id: int, strona: int = 1, db: Session = Depends(get_db)):
+    """Podgląd książki w panelu.
+
+    Przedtem tytuł na liście prowadził do surowego pliku PDF w nowej karcie -
+    redaktor wychodził z panelu i wracał przyciskiem przeglądarki."""
+    source = db.get(Source, source_id)
+    if source is None:
+        raise HTTPException(404, "Nie ma takiego źródła")
+
+    numery = [p.number for p in db.query(Page).filter_by(source_id=source_id).order_by(Page.number).all()]
+    biezaca = strona if strona in numery else (numery[0] if numery else 1)
+    page = db.query(Page).filter_by(source_id=source_id, number=biezaca).one_or_none()
+    akapity = (
+        db.query(Chunk).filter_by(page_id=page.id).order_by(Chunk.seq).all() if page else []
+    )
+
+    return templates.TemplateResponse(
+        "zrodlo.html",
+        {
+            "request": request,
+            "strona": "zrodla",
+            "zrodlo": source,
+            "strony": numery,
+            "biezaca": biezaca,
+            "akapity": akapity,
+            **_wspolne(db),
+        },
+    )
 
 
 @router.get("/zrodla/{source_id}/strona/{numer}.png")

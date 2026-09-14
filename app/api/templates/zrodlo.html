@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block title %}{{ zrodlo.title }}{% endblock %}
+{% block style %}
+<style>
+  .uklad-zrodla { display: grid; grid-template-columns: 18rem minmax(0, 1fr); gap: 1rem; align-items: start; }
+  .strona-obraz { width: 100%; border: 1px solid var(--ramka); border-radius: 4px; margin-bottom: 1rem; }
+  .lista-stron { max-height: 70vh; overflow-y: auto; }
+  .lista-stron a { display: block; padding: 0.3rem 0.6rem; text-decoration: none; color: var(--tekst); border-radius: 4px; font-size: 0.9rem; }
+  .lista-stron a:hover { background: var(--tlo); }
+  .lista-stron a.biezaca { background: var(--akcent-jasny); color: var(--akcent); font-weight: 600; }
+  @media (max-width: 900px) { .uklad-zrodla { grid-template-columns: 1fr; } }
+</style>
+{% endblock %}
+{% block content %}
+<p><a href="/zrodla">← wszystkie źródła</a></p>
+<h1>{{ zrodlo.title }}</h1>
+<p class="podpowiedz">
+  {% if zrodlo.author %}{{ zrodlo.author }} · {% endif %}
+  {% for e in zrodlo.labels %}<span class="etykieta">{{ e.name }}</span>{% endfor %}
+  {% if zrodlo.kind == "pdf" %}· <a href="/zrodla/{{ zrodlo.id }}/plik" target="_blank" rel="noopener">pobierz oryginał</a>{% endif %}
+</p>
+
+<div class="uklad-zrodla">
+  <div class="kolumna karta">
+    <strong>Strony</strong>
+    <div class="lista-stron">
+      {% for s in strony %}
+      <a href="/zrodla/{{ zrodlo.id }}?strona={{ s }}" class="{% if s == biezaca %}biezaca{% endif %}">Strona {{ s }}</a>
+      {% endfor %}
+    </div>
+  </div>
+
+  <div>
+    {% if zrodlo.kind == "pdf" %}
+    <img class="strona-obraz" src="/zrodla/{{ zrodlo.id }}/strona/{{ biezaca }}.png" alt="Strona {{ biezaca }}">
+    {% endif %}
+    <div class="karta">
+      <strong>Akapity ze strony {{ biezaca }}</strong>
+      {% for a in akapity %}
+      <p>{{ a.text }}</p>
+      {% else %}
+      <p class="podpowiedz">Na tej stronie nie ma tekstu, który dałoby się zacytować.</p>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+{% endblock %}
