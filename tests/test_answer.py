@@ -47,3 +47,8 @@ def test_pusty_cytat_nie_przechodzi():
 
 def test_normalizacja_nie_zmienia_tresci():
     assert normalize("Tekst  z   odstępami") == "tekst z odstępami"
+
+
+def test_normalizacja_laczy_rozne_mysniki():
+    """PDF używa półpauzy, model często przepisuje dywizem."""
+    assert normalize("22–28") == normalize("22-28")

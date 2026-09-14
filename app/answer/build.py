@@ -35,6 +35,7 @@ Zasady treści:
 - Nie pisz niczego, czego nie ma w akapitach. Zero własnej wiedzy o ogrodnictwie.
 - Jeśli akapity nie odpowiadają na pytanie, zwróć pustą listę zdań. To jest poprawna odpowiedź, nie porażka. Wyszukiwanie ZAWSZE zwraca jakieś akapity, nawet gdy żaden nie dotyczy pytania — lepiej powiedzieć "nie mam tego w źródłach" niż zlepić odpowiedź z tekstu o czymś innym.
 - Nie wyciągaj wniosków. Jeśli źródło opisuje objawy choroby przy niskim pH, nie przerabiaj tego na zalecenie dotyczące odczynu gleby.
+- Patrz na "poprzedni_fragment" — mówi, z jakiej części książki pochodzi akapit. Jeśli zalecenie dotyczy konkretnego problemu (choroby, szkodnika, zaburzenia), NAPISZ TO WPROST albo pomiń je zupełnie. "Podnieś pH gleby do około 6,0" w rozdziale o suchej zgniliźnie wierzchołkowej to sposób zapobiegania tej chorobie, a nie odpowiedź na pytanie, w jakim pH sadzić pomidory. Dobrze: "Przy suchej zgniliźnie wierzchołkowej podnosi się pH gleby do około 6,0". Źle: "Pomidory najlepiej sadzić w glebie o pH około 6,0".
 
 Zasady języka — materiał czytają dorośli, którzy chcą się czegoś dowiedzieć:
 - Jedno zdanie = jedna myśl. Zdanie powyżej 20 wyrazów rozbij na dwa.
@@ -112,11 +113,18 @@ def answer_question(question: str, source_ids: list[int] | None = None) -> dict:
         pages = {p.id: p for p in db.query(Page).filter(Page.id.in_([c.page_id for c in chunks])).all()}
         sources = {s.id: s for s in db.query(Source).filter(Source.id.in_({c.source_id for c in chunks})).all()}
 
+        poprzednie = _poprzednie_akapity(db, [by_id[cid] for cid in chunk_ids if cid in by_id])
         context = [
             {
                 "chunk_id": chunk.id,
                 "source": sources[chunk.source_id].title,
                 "page": pages[chunk.page_id].number,
+                # Poczatek poprzedniego akapitu - bez tego model nie wie, czego
+                # dotyczy fragment. Akapit "Niedobor wapnia... Jak zapobiegac:
+                # Podnies pH gleby do okolo 6,0" wyglada jak porada o odczynie
+                # gleby, a jest zaleceniem przy suchej zgniliznie wierzcholkowej
+                # - nagłowek rozdzialu siedzi w akapicie obok.
+                "poprzedni_fragment": poprzednie.get(chunk.id),
                 "text": chunk.text,
             }
             # Kolejnosc z wyszukiwania - najtrafniejsze najpierw.
@@ -127,6 +135,27 @@ def answer_question(question: str, source_ids: list[int] | None = None) -> dict:
         return _verify(raw, by_id, pages, sources)
     finally:
         db.close()
+
+
+def _poprzednie_akapity(db, chunks: list[Chunk]) -> dict[int, str | None]:
+    """Poczatek akapitu poprzedzajacego kazdy ze znalezionych.
+
+    Wystarczy kilkadziesiat znakow: chodzi o to, zeby model zobaczyl naglowek
+    albo pierwsze zdanie sekcji i wiedzial, czego dotyczy fragment - nie o to,
+    zeby dostal drugi raz cala strone."""
+    wynik: dict[int, str | None] = {}
+    for chunk in chunks:
+        if chunk.seq == 0:
+            wynik[chunk.id] = None
+            continue
+        poprzedni = (
+            db.query(Chunk)
+            .filter(Chunk.page_id == chunk.page_id, Chunk.seq < chunk.seq)
+            .order_by(Chunk.seq.desc())
+            .first()
+        )
+        wynik[chunk.id] = poprzedni.text[:200] if poprzedni else None
+    return wynik
 
 
 def _no_data() -> dict:
