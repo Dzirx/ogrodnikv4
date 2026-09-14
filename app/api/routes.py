@@ -67,7 +67,14 @@ def pytania(request: Request, db: Session = Depends(get_db)):
 
 
 @router.get("/rozmowy/{rozmowa_id}", response_class=HTMLResponse)
-def rozmowa(request: Request, rozmowa_id: int, podglad: int | None = None, db: Session = Depends(get_db)):
+def rozmowa(
+    request: Request,
+    rozmowa_id: int,
+    podglad: int | None = None,
+    w: int | None = None,
+    z: int | None = None,
+    db: Session = Depends(get_db),
+):
     conversation = db.get(Conversation, rozmowa_id)
     if conversation is None:
         raise HTTPException(404, "Nie ma takiej rozmowy")
@@ -82,27 +89,42 @@ def rozmowa(request: Request, rozmowa_id: int, podglad: int | None = None, db: S
             "pogrupowane": _pogrupuj_zrodla(gotowe),
             "rozmowa": conversation,
             "wiadomosci": db.query(Message).filter_by(conversation_id=rozmowa_id).order_by(Message.id).all(),
-            "podglad": _podglad(db, podglad),
+            "podglad": _podglad(db, podglad, w, z),
             **_wspolne(db),
         },
     )
 
 
-def _podglad(db: Session, chunk_id: int | None) -> dict | None:
-    """Akapit pokazywany w prawej kolumnie wraz ze stroną PDF.
+def _podglad(
+    db: Session, chunk_id: int | None, message_id: int | None = None, zdanie: int | None = None
+) -> dict | None:
+    """Akapit pokazywany w prawej kolumnie wraz ze stroną źródła.
 
-    Redaktor przy każdym cytacie tracił kontekst i musiał szukać, skąd on jest.
-    Teraz klika znacznik i widzi tę stronę obok tekstu."""
+    Zaznaczamy CYTAT, nie cały akapit. Akapit potrafi mieć sześćset znaków i
+    obejmować kilka różnych rzeczy naraz - na stronie o suchej zgniliźnie
+    jeden akapit zawiera i przyczyny choroby, i zalecenie dotyczące odczynu
+    gleby. Zaznaczony w całości świecił na żółto przyczyny choroby, choć
+    odpowiedź dotyczyła pH."""
     if chunk_id is None:
         return None
     chunk = db.get(Chunk, chunk_id)
     if chunk is None:
         return None
+
+    do_zaznaczenia = chunk.text
+    if message_id is not None and zdanie is not None:
+        wiadomosc = db.get(Message, message_id)
+        zdania = (wiadomosc.answer_json or {}).get("sentences", []) if wiadomosc else []
+        if 0 <= zdanie < len(zdania):
+            cytat = (zdania[zdanie].get("source") or {}).get("quote")
+            if cytat:
+                do_zaznaczenia = cytat
     page = db.get(Page, chunk.page_id)
     source = db.get(Source, chunk.source_id)
     return {
         "chunk_id": chunk.id,
         "text": chunk.text,
+        "zaznacz": do_zaznaczenia,
         "page": page.number,
         "source_id": source.id,
         "source_title": source.title,
@@ -262,7 +284,13 @@ def zrodlo(
 
 
 @router.get("/zrodla/{source_id}/strona/{numer}.png")
-def obraz_strony(source_id: int, numer: int, chunk: int | None = None, db: Session = Depends(get_db)):
+def obraz_strony(
+    source_id: int,
+    numer: int,
+    chunk: int | None = None,
+    cytat: str | None = None,
+    db: Session = Depends(get_db),
+):
     """Strona źródła jako obraz, z podświetlonym cytowanym fragmentem.
 
     Sam numer strony nie wystarcza: książkowa strona ma kilka tysięcy znaków
@@ -272,12 +300,19 @@ def obraz_strony(source_id: int, numer: int, chunk: int | None = None, db: Sessi
     if source is None or source.kind != "pdf":
         raise HTTPException(404, "Nie ma takiego pliku PDF")
 
-    fragment = db.get(Chunk, chunk).text if chunk else None
+    # Cytat ma pierwszeństwo przed całym akapitem - jest krótszy i wskazuje
+    # dokładnie to zdanie, na którym oparta jest odpowiedź.
+    fragment = cytat or (db.get(Chunk, chunk).text if chunk else None)
     try:
         obraz = render_strony(download_bytes(source.object_key), numer, fragment)
     except ValueError as exc:
         raise HTTPException(404, str(exc))
-    return Response(content=obraz, media_type="image/png")
+    # Bez tego przegladarka trzyma obraz w pamieci podrecznej pod tym samym
+    # adresem i po poprawce zaznaczenia pokazuje stara wersje - mylace przy
+    # sprawdzaniu, czy cytat trafia we wlasciwe miejsce.
+    return Response(
+        content=obraz, media_type="image/png", headers={"Cache-Control": "no-store"}
+    )
 
 
 @router.get("/zrodla/{source_id}/plik")

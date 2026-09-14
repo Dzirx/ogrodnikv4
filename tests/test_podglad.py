@@ -84,3 +84,22 @@ def test_krotkie_przypadkowe_trafienie_nie_wystarcza():
     cytat = "pomidory lubia slonce oraz cieplo i oslone od wiatru w ogrodzie".split()
 
     assert len(_dopasuj_slowa(strona, cytat)) == 0
+
+
+def test_nie_przeskakuje_na_nastepny_punkt_gdy_pdf_lamie_wyraz():
+    """PDF lamie wyrazy miedzy wierszami: w zrodle jest "kre dą" zamiast
+    "kredą". Cytat urywa sie w tym miejscu, a przy luznej tolerancji
+    dopasowanie "dobiegalo" do nastepnego punktu listy i zaznaczalo nie te
+    linijke - na stronie o suchej zgniliznie swiecilo "Nawozenie wapniem"
+    zamiast "Odczyn podloza: Podnies pH"."""
+    strona = (
+        "odczyn podloza podnies ph gleby do okolo 60 stosujac nawozenie kreda "
+        "nawozenie wapniem regularnie opryskuj rosliny roztworem saletry wapniowej"
+    ).split()
+    cytat = "odczyn podloza podnies ph gleby do okolo 60 stosujac nawozenie kre da".split()
+
+    indeksy = _dopasuj_slowa(strona, cytat)
+
+    assert indeksy[0] == 0, "zaznaczenie musi zaczynac sie od poczatku cytatu"
+    # Nie wolno wejsc w nastepny punkt listy.
+    assert max(indeksy) <= 10

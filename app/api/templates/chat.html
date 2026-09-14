@@ -134,7 +134,11 @@
               {% for zdanie in w.answer_json.sentences %}
               <p{% if not zdanie.verified %} class="niepotwierdzone"{% endif %}>
                 {{ zdanie.text }}
-                {% if zdanie.source %}<a class="znacznik" href="?podglad={{ zdanie.source.chunk_id }}">{{ zdanie.source.marker }}</a>{% endif %}
+                {# Znacznik wskazuje konkretne ZDANIE, nie tylko akapit: podglad
+                   zaznacza wtedy sam cytat. Akapit potrafi miec szescset znakow
+                   i obejmowac kilka roznych rzeczy - zaznaczony w calosci
+                   swieci nie tam, gdzie trzeba. #}
+                {% if zdanie.source %}<a class="znacznik" href="?podglad={{ zdanie.source.chunk_id }}&w={{ w.id }}&z={{ loop.index0 }}">{{ zdanie.source.marker }}</a>{% endif %}
                 {% if not zdanie.verified %}<br><small>Nie znalazłem tego zdania w źródle — sprawdź przed użyciem.</small>{% endif %}
               </p>
               {% endfor %}
@@ -181,7 +185,7 @@
       {# Obraz strony z podswietlonym cytatem, nie osadzony PDF: redaktor ma
          od razu widziec, KTORE zdanie na stronie jest cytowane, zamiast
          szukac go wsrod kilku tysiecy znakow. #}
-      <img class="podglad-strona" src="/zrodla/{{ podglad.source_id }}/strona/{{ podglad.page }}.png?chunk={{ podglad.chunk_id }}" alt="Strona {{ podglad.page }}">
+      <img class="podglad-strona" src="/zrodla/{{ podglad.source_id }}/strona/{{ podglad.page }}.png?cytat={{ podglad.zaznacz | urlencode }}" alt="Strona {{ podglad.page }}">
       {# Ekran ksiazki w panelu, nie surowy PDF: przy pliku wazacym kilka
          megabajtow przegladarkowy czytnik wymaga obslugi zakresow bajtow i
          przy jej braku nie pokazuje nic. Poza tym redaktor zostaje w panelu. #}
