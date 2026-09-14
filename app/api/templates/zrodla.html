@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% block title %}Źródła{% endblock %}
+{% block content %}
+<h1>Źródła</h1>
+
+{% if blad %}<p class="karta" style="border-color: var(--uwaga)">{{ blad }}</p>{% endif %}
+
+<div class="karta" style="max-width: 44rem; margin-bottom: 1.5rem;">
+  <form method="post" action="/zrodla" enctype="multipart/form-data">
+    <div class="pole">
+      <label for="tytul">Tytuł</label>
+      <input type="text" id="tytul" name="tytul" required placeholder="np. Sułek, Uprawa pomidora pod osłonami">
+    </div>
+    <div class="pole">
+      <label for="etykiety">Tematy</label>
+      <input type="text" id="etykiety" name="etykiety" placeholder="pomidor, bioróżnorodność">
+      <p class="podpowiedz">Po przecinku. Źródło dodajesz raz — przy pytaniu wybierzesz, z czego czerpać.</p>
+    </div>
+    <div class="pole">
+      <label for="autor">Autor</label>
+      <input type="text" id="autor" name="autor">
+    </div>
+    <div class="pole">
+      <label for="plik">Plik PDF</label>
+      <input type="file" id="plik" name="plik" accept=".pdf">
+    </div>
+    <div class="pole">
+      <label for="tekst">albo wklej tekst</label>
+      <textarea id="tekst" name="tekst" placeholder="Wklej treść — na przykład swoje wpisy z Facebooka. Akapity oddzielaj pustą linią."></textarea>
+    </div>
+    <button type="submit">Dodaj źródło</button>
+  </form>
+</div>
+
+{% if zrodla %}
+<table>
+  <tr><th>Tytuł</th><th>Tematy</th><th>Stan</th></tr>
+  {% for z in zrodla %}
+  <tr>
+    <td>
+      {% if z.kind == "pdf" %}<a href="/zrodla/{{ z.id }}/plik" target="_blank" rel="noopener">{{ z.title }}</a>{% else %}{{ z.title }}{% endif %}
+      {% if z.author %}<br><span class="podpowiedz">{{ z.author }}</span>{% endif %}
+    </td>
+    <td>{% for e in z.labels %}<span class="etykieta">{{ e.name }}</span>{% else %}<span class="podpowiedz">—</span>{% endfor %}</td>
+    <td>
+      {% if z.status == "ready" %}{{ liczba_akapitow.get(z.id, 0) }} akapitów
+      {% elif z.status == "error" %}<span style="color: var(--uwaga)">błąd: {{ z.error_text }}</span>
+      {% else %}przetwarzanie…{% endif %}
+    </td>
+  </tr>
+  {% endfor %}
+</table>
+{% else %}
+<p class="pusto">Nie ma jeszcze żadnych źródeł.</p>
+{% endif %}
+{% endblock %}

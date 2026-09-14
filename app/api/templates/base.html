@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}Ogrodnik{% endblock %}</title>
+<style>
+  :root {
+    --tekst: #1b1b18; --przygaszony: #6b6b60; --tlo: #faf9f5; --karta: #fff;
+    --ramka: #e0ddd2; --akcent: #2d6a4f; --akcent-jasny: #e8f0ec;
+    --uwaga: #b45309; --uwaga-tlo: #fff8e6;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; font: 16px/1.6 system-ui, -apple-system, "Segoe UI", sans-serif;
+    color: var(--tekst); background: var(--tlo);
+  }
+  header {
+    background: var(--karta); border-bottom: 1px solid var(--ramka);
+    padding: 0 1.5rem; display: flex; align-items: center; gap: 1.5rem;
+  }
+  header .marka { font-weight: 600; padding: 0.9rem 0; }
+  header nav a {
+    display: inline-block; padding: 0.9rem 0; margin-right: 1.2rem;
+    color: var(--przygaszony); text-decoration: none; border-bottom: 2px solid transparent;
+  }
+  header nav a:hover { color: var(--tekst); }
+  header nav a.aktywny { color: var(--akcent); border-bottom-color: var(--akcent); }
+  main { padding: 1.5rem; max-width: 100%; }
+  h1 { font-size: 1.4rem; margin: 0 0 1rem; }
+  h2 { font-size: 1.1rem; margin: 1.5rem 0 0.6rem; }
+  a { color: var(--akcent); }
+  button, input[type="submit"] {
+    font: inherit; background: var(--akcent); color: #fff; border: 0;
+    padding: 0.5rem 1rem; border-radius: 6px; cursor: pointer;
+  }
+  button:hover { filter: brightness(1.1); }
+  button.drugorzedny { background: var(--karta); color: var(--tekst); border: 1px solid var(--ramka); }
+  input[type="text"], textarea, select {
+    font: inherit; width: 100%; padding: 0.55rem 0.7rem;
+    border: 1px solid var(--ramka); border-radius: 6px; background: var(--karta); color: var(--tekst);
+  }
+  textarea { min-height: 6rem; resize: vertical; }
+  label { display: block; font-weight: 500; margin-bottom: 0.25rem; }
+  .pole { margin-bottom: 1rem; max-width: 42rem; }
+  .podpowiedz { color: var(--przygaszony); font-size: 0.875rem; }
+  .karta { background: var(--karta); border: 1px solid var(--ramka); border-radius: 8px; padding: 1rem; }
+  .etykieta {
+    display: inline-block; padding: 0.1rem 0.6rem; border-radius: 999px;
+    background: var(--akcent-jasny); color: var(--akcent); font-size: 0.8rem; margin-right: 0.3rem;
+  }
+  table { width: 100%; border-collapse: collapse; background: var(--karta); }
+  th, td { text-align: left; padding: 0.6rem 0.8rem; border-bottom: 1px solid var(--ramka); }
+  th { font-size: 0.85rem; color: var(--przygaszony); font-weight: 600; }
+  .pusto { color: var(--przygaszony); padding: 2rem 0; }
+</style>
+{% block style %}{% endblock %}
+</head>
+<body>
+<header>
+  <span class="marka">Ogrodnik</span>
+  <nav>
+    <a href="/" class="{% if strona == 'pytania' %}aktywny{% endif %}">Pytania</a>
+    <a href="/zrodla" class="{% if strona == 'zrodla' %}aktywny{% endif %}">Źródła</a>
+    <a href="/konflikty" class="{% if strona == 'konflikty' %}aktywny{% endif %}">
+      Do rozstrzygnięcia{% if liczba_konfliktow %} ({{ liczba_konfliktow }}){% endif %}
+    </a>
+  </nav>
+</header>
+<main>{% block content %}{% endblock %}</main>
+</body>
+</html>

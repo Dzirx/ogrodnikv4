@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block title %}Do rozstrzygnięcia{% endblock %}
+{% block content %}
+<h1>Do rozstrzygnięcia</h1>
+<p class="podpowiedz">Twoje źródła podają tu różne wartości tej samej rzeczy.
+Program nie wybiera za Ciebie — zdecyduj, co obowiązuje. To jedyne miejsce, w którym o coś pyta.</p>
+
+{% if konflikty %}
+  {% for k in konflikty %}
+  <div class="karta" style="margin-bottom: 1rem; max-width: 52rem;">
+    <h2 style="margin-top: 0">{{ k.subject }}</h2>
+    <form method="post" action="/konflikty/{{ k.id }}">
+      {% for o in k.options %}
+      <div class="pole">
+        <label><input type="radio" name="wartosc" value="{{ o.value }}" required> <strong>{{ o.value }}</strong></label>
+        <p class="podpowiedz" style="margin: 0.2rem 0 0 1.5rem;">
+          „{{ o.quote }}" — {{ zrodla_opcji.get(o.id, "") }}
+        </p>
+      </div>
+      {% endfor %}
+      <div class="pole">
+        <label><input type="radio" name="wartosc" value="__wlasna__"> albo wpisz własną:</label>
+        <input type="text" name="wlasna" placeholder="np. 5,7" style="max-width: 14rem; margin-left: 1.5rem;">
+        <p class="podpowiedz" style="margin-left: 1.5rem;">
+          Program zapamięta ją i będzie stosował. W odpowiedziach pojawi się jako Twoje ustalenie, nie cytat z książki.
+        </p>
+      </div>
+      <button type="submit">Przyjmij</button>
+    </form>
+  </div>
+  {% endfor %}
+{% else %}
+<p class="pusto">Nic nie czeka. Źródła się zgadzają albo jeszcze ich nie porównano.</p>
+{% endif %}
+
+{% if rozstrzygniete %}
+<h2>Już rozstrzygnięte</h2>
+<table>
+  <tr><th>Rzecz</th><th>Przyjęto</th><th>Skąd</th></tr>
+  {% for k in rozstrzygniete %}
+  <tr>
+    <td>{{ k.subject }}</td>
+    <td><strong>{{ k.resolved_value }}</strong></td>
+    <td>{% if k.resolved_origin == "editorial" %}Twoje ustalenie{% else %}ze źródła{% endif %}</td>
+  </tr>
+  {% endfor %}
+</table>
+{% endif %}
+{% endblock %}
