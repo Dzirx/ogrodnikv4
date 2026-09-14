@@ -20,6 +20,7 @@ from openai import OpenAI
 from app.config import settings
 from app.db.base import SessionLocal
 from app.db.models import Chunk, Page, Source
+from app.answer.styl import sprawdz, sprawdz_odpowiedz
 from app.search.index import search
 
 _openai = OpenAI(api_key=settings.openai_api_key)
@@ -45,14 +46,120 @@ Zasady języka — materiał czytają dorośli, którzy chcą się czegoś dowie
 - Uważaj na przyimki: "W uprawie gruntowej pomidorów...", nie "Dla uprawy gruntowej pomidorów...".
 - Całość do około dziesięciu zdań. Krócej jest lepiej, jeśli odpowiedź jest pełna.
 
-NAJWAŻNIEJSZE: nie przepisuj zdania ze źródła. Źródła są pisane językiem urzędowym ("należy rozpocząć", "zaleca się", "produkcja rozsady") — Ty masz powiedzieć to samo tak, jak powiedziałby człowiek, który się na tym zna i tłumaczy komuś, kto pyta. "quote" ma być dosłownym cytatem ze źródła, ale "text" NIE może być jego kopią ani bliską parafrazą.
+NAJWAŻNIEJSZE — JĘZYK. Piszesz do ogrodnika, nie do urzędu. Czyta to człowiek starszej daty, który natychmiast wyłapuje sztuczne zdania.
+
+Zakazane konstrukcje:
+- "zalecane jest", "zaleca się", "należy", "powinien/powinno/powinna", "wskazane jest", "rekomenduje się" — zamiast tego pisz wprost: "podłoże ma być żyzne", "gleba jest lekko kwaśna";
+- słowa z języka opracowań fachowych: "preferuje" (powiedz: lubi), "charakteryzuje się", "w przypadku" (powiedz: przy, gdy), "zapewnić odpowiednie warunki" (powiedz: zadbać o);
+- rzeczowniki odczasownikowe tam, gdzie wystarczy czasownik: "produkcja rozsady" zamiast "rozsadę produkuje się", "stosowanie nawożenia" zamiast "nawozi się";
+- zdania zaczynające się od tego, co zostało zalecone, zamiast od rzeczy, o której mowa;
+- kalki z pytania: jeśli pytanie brzmi "w jakim pH najlepiej sadzić", nie zaczynaj odpowiedzi od "najlepiej sadzić w pH".
+
+Tak wygląda ta sama treść powiedziana po ludzku:
 
 Źle:    "Produkcję rozsady pomidorów do uprawy gruntowej należy rozpocząć od wysiewu nasion w drugiej połowie marca."
 Dobrze: "Rozsadę na grunt wysiewa się w drugiej połowie marca."
 
-Źle:    "Zaleca się stosowanie podłoża o odczynie lekko kwaśnym."
-Dobrze: "Pomidor lubi glebę lekko kwaśną."""
+Źle:    "Zalecane podłoże do siewu pomidorów ma pH 6,0–6,5."
+Dobrze: "Do siewu weź podłoże o pH 6,0–6,5."
 
+Źle:    "Pomidory najlepiej sadzić w glebie o pH około 6,0."
+Dobrze: "Pomidor lubi glebę o odczynie około 6,0."
+
+Źle:    "Zaleca się stosowanie podłoża o odczynie lekko kwaśnym."
+Dobrze: "Pomidor lubi glebę lekko kwaśną."
+
+Źle:    "W tunelach foliowych należy monitorować temperaturę, aby nie przekraczała 30°C."
+Dobrze: "W tunelu pilnuj, żeby temperatura nie przekraczała 30°C."
+
+"quote" ma być dosłownym cytatem ze źródła, ale "text" NIE może być jego kopią ani bliską parafrazą."""
+
+
+ZBIERANIE_PROMPT = """Wypisz fakty, które podane akapity mówią na temat pytania.
+
+To pierwszy z dwóch kroków: teraz tylko zbierasz surowe informacje, nie piszesz odpowiedzi.
+
+Dla każdego faktu podaj:
+- "tresc": sama informacja, możliwie zwięźle. Nie zdanie z książki, tylko to, co ono mówi. Zamiast "Zalecanymi podłożami do siewu są tzw. ziemie inspektowe lub substrat z torfu wysokiego, który jest odkwaszony i ma odczyn pH 6,0–6,5" napisz "podłoże do siewu: pH 6,0–6,5, odkwaszony torf wysoki albo ziemia inspektowa".
+- "warunek": kiedy to obowiązuje, jeśli źródło to zawęża — "pod osłonami", "przy suchej zgniliźnie wierzchołkowej", "dla odmian wysokich". Pusty ciąg, gdy fakt jest ogólny. Patrz na "poprzedni_fragment": mówi, z jakiej części książki pochodzi akapit.
+- "chunk_id" oraz "quote": dosłowny fragment akapitu, który ten fakt potwierdza.
+
+Zasady:
+- Tylko to, co jest w akapitach. Zero własnej wiedzy.
+- Tylko to, co dotyczy pytania. Akapit o czymś innym pomiń.
+- Jeśli żaden akapit nie odpowiada na pytanie, zwróć pustą listę."""
+
+
+PISANIE_PROMPT = """Odpowiedz na pytanie, korzystając WYŁĄCZNIE z podanych faktów.
+
+Nie widzisz zdań z książki, tylko suche informacje - i bardzo dobrze. Masz je powiedzieć własnymi słowami, tak jak powiedziałby ogrodnik, który się na tym zna i tłumaczy komuś, kto pyta.
+
+Dla każdego zdania podaj "fakt_nr" - numer faktu, z którego korzystasz.
+
+Język - czyta to człowiek starszej daty, który natychmiast wyłapuje sztuczne zdania:
+- Jedno zdanie = jedna myśl, najwyżej kilkanaście wyrazów.
+- Mów wprost: "pomidor lubi glebę lekko kwaśną", nie "zalecany odczyn gleby dla pomidora wynosi".
+- Żadnych zwrotów urzędowych: "zaleca się", "należy", "powinno być", "wskazane jest", "preferuje", "w przypadku".
+- Strona czynna: "rozsadę wysiewa się w marcu", nie "produkcję rozsady rozpoczyna się".
+- Bez zapowiedzi i podsumowań. Bez doklejek w rodzaju "co jest korzystne dla środowiska".
+- Odpowiedz krótko. Kilka zdań wystarczy; dziesięć to już dużo.
+
+UKŁAD ODPOWIEDZI. Nie przerabiaj faktów jeden po drugim na osobne zdania — wyjdzie wyliczanka, a nie odpowiedź. Fakty mówiące o tej samej rzeczy w różnych sytuacjach połącz w jedną wypowiedź i pokaż różnicę między nimi.
+
+Nie zaczynaj kolejnych zdań tak samo. Dwa zdania pod rząd od "Jeśli" to znak, że układasz listę zamiast mówić.
+
+Źle:    "Jeśli chcesz uprawiać pomidory w gruncie, siej nasiona w drugiej połowie marca lub na początku kwietnia.
+         Jeśli planujesz uprawę pod osłonami, wysiej nasiona na początku marca."
+Dobrze: "Na grunt siej w drugiej połowie marca albo na początku kwietnia. Pod osłony wcześniej, bo już na początku marca."
+
+Źle:    "Jeśli gleba jest zbyt kwaśna, zastosuj wapnowanie.
+         Jeśli pH jest zbyt niskie, pomidory słabo pobierają składniki."
+Dobrze: "Przy zbyt kwaśnej glebie pomidor słabo pobiera składniki — wtedy trzeba ją zwapnować."
+
+Warunek z faktu wpleć w zdanie naturalnie ("pod osłony", "w gruncie", "przy suchej zgniliźnie"), nie jako osobną klauzulę na początku."""
+
+
+_SCHEMA_FAKTY = {
+    "type": "object",
+    "properties": {
+        "fakty": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "tresc": {"type": "string"},
+                    "warunek": {"type": "string"},
+                    "chunk_id": {"type": "integer"},
+                    "quote": {"type": "string"},
+                },
+                "required": ["tresc", "warunek", "chunk_id", "quote"],
+                "additionalProperties": False,
+            },
+        }
+    },
+    "required": ["fakty"],
+    "additionalProperties": False,
+}
+
+_SCHEMA_ODPOWIEDZ = {
+    "type": "object",
+    "properties": {
+        "sentences": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "text": {"type": "string"},
+                    "fakt_nr": {"type": "integer"},
+                },
+                "required": ["text", "fakt_nr"],
+                "additionalProperties": False,
+            },
+        }
+    },
+    "required": ["sentences"],
+    "additionalProperties": False,
+}
 
 _SCHEMA = {
     "type": "object",
@@ -179,7 +286,11 @@ def answer_question(
             for chunk in (by_id[cid] for cid in chunk_ids if cid in by_id)
         ]
 
-        raw = _call_model(do_wyszukania, context)
+        fakty = _zbierz_fakty(do_wyszukania, context)
+        if not fakty:
+            return _no_data()
+
+        raw = _napisz_z_faktow(do_wyszukania, fakty)
         return _verify(raw, by_id, pages, sources)
     finally:
         db.close()
@@ -218,12 +329,23 @@ def _no_data() -> dict:
     }
 
 
-def _call_model(question: str, context: list[dict]) -> dict:
-    response = _openai.chat.completions.create(
+def _zbierz_fakty(question: str, context: list[dict]) -> list[dict]:
+    """Krok pierwszy: co akapity mowia na temat pytania.
+
+    Zbieramy surowe informacje, nie zdania. To jest sedno podzialu na dwa
+    kroki: gdy model widzi zdania z ksiazki i ma na nie odpowiedziec, kopiuje
+    ich rytm - a ksiazki sa pisane jezykiem urzedowym ("zalecanymi podlozami
+    sa...", "nalezy rozpoczac..."). Probowalem to leczyc lista zakazanych slow
+    w prompcie i poprawianiem gotowych zdan; model za kazdym razem znajdowal
+    kolejny urzedowy zwrot, bo zrodlo ciagnelo go w te strone.
+
+    Po rozdzieleniu krokow w drugim model nie widzi juz zdan ksiazki, tylko
+    suche fakty - nie ma czego parafrazowac."""
+    odpowiedz = _openai.chat.completions.create(
         model=settings.answer_model,
-        temperature=0.2,
+        temperature=0,
         messages=[
-            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "system", "content": ZBIERANIE_PROMPT},
             {
                 "role": "user",
                 "content": json.dumps({"pytanie": question, "akapity": context}, ensure_ascii=False),
@@ -231,10 +353,54 @@ def _call_model(question: str, context: list[dict]) -> dict:
         ],
         response_format={
             "type": "json_schema",
-            "json_schema": {"name": "answer", "schema": _SCHEMA, "strict": True},
+            "json_schema": {"name": "fakty", "schema": _SCHEMA_FAKTY, "strict": True},
         },
     )
-    return json.loads(response.choices[0].message.content)
+    return json.loads(odpowiedz.choices[0].message.content).get("fakty", [])
+
+
+def _napisz_z_faktow(question: str, fakty: list[dict]) -> dict:
+    """Krok drugi: odpowiedz ulozona z faktow.
+
+    Model dostaje tylko tresc i warunek - bez cytatow i bez zdan zrodlowych.
+    Cytat wraca pozniej, przypisany przez numer faktu (_verify)."""
+    do_napisania = [
+        {"nr": i, "tresc": f.get("tresc", ""), "warunek": f.get("warunek", "")}
+        for i, f in enumerate(fakty)
+    ]
+    odpowiedz = _openai.chat.completions.create(
+        model=settings.answer_model,
+        temperature=0.3,
+        messages=[
+            {"role": "system", "content": PISANIE_PROMPT},
+            {
+                "role": "user",
+                "content": json.dumps({"pytanie": question, "fakty": do_napisania}, ensure_ascii=False),
+            },
+        ],
+        response_format={
+            "type": "json_schema",
+            "json_schema": {"name": "odpowiedz", "schema": _SCHEMA_ODPOWIEDZ, "strict": True},
+        },
+    )
+    napisane = json.loads(odpowiedz.choices[0].message.content).get("sentences", [])
+
+    # Cytat wraca do zdania przez numer faktu - dzieki temu weryfikacja
+    # dziala tak samo jak przedtem.
+    zdania = []
+    for zdanie in napisane:
+        numer = zdanie.get("fakt_nr")
+        if not isinstance(numer, int) or not 0 <= numer < len(fakty):
+            continue
+        fakt = fakty[numer]
+        zdania.append(
+            {
+                "text": zdanie.get("text", ""),
+                "chunk_id": fakt.get("chunk_id"),
+                "quote": fakt.get("quote", ""),
+            }
+        )
+    return {"sentences": zdania}
 
 
 def _verify(raw: dict, by_id: dict, pages: dict, sources: dict) -> dict:
@@ -246,7 +412,14 @@ def _verify(raw: dict, by_id: dict, pages: dict, sources: dict) -> dict:
         chunk = by_id.get(item.get("chunk_id"))
         if chunk is None:
             # Model wskazal akapit, ktorego mu nie dalismy.
-            sentences.append({"text": item.get("text", ""), "verified": False, "source": None})
+            sentences.append(
+                {
+                    "text": item.get("text", ""),
+                    "verified": False,
+                    "styl": sprawdz(item.get("text", "")),
+                    "source": None,
+                }
+            )
             continue
 
         verified = quote_is_in_chunk(item.get("quote", ""), chunk.text)
@@ -259,6 +432,10 @@ def _verify(raw: dict, by_id: dict, pages: dict, sources: dict) -> dict:
             {
                 "text": item.get("text", ""),
                 "verified": verified,
+                # Uwagi do języka - klient czyta uchem człowieka starszej daty
+                # i wyłapuje zdania urzędowe. Prompt o to prosi, ten kod
+                # sprawdza, czy model posłuchał.
+                "styl": sprawdz(item.get("text", "")),
                 "source": {
                     "chunk_id": chunk.id,
                     "source_id": source.id,
@@ -273,6 +450,11 @@ def _verify(raw: dict, by_id: dict, pages: dict, sources: dict) -> dict:
 
     if not sentences:
         return _no_data()
+
+    # Uwagi widoczne dopiero w calej odpowiedzi (np. dwa zdania zaczynajace sie
+    # tak samo) dokladamy do zdania, ktorego dotycza.
+    for numer, uwagi in sprawdz_odpowiedz([z["text"] for z in sentences]).items():
+        sentences[numer]["styl"] = sentences[numer].get("styl", []) + uwagi
 
     source_list = []
     for index, chunk_id in enumerate(used_chunks, start=1):

@@ -77,6 +77,7 @@
   .akapit-zrodla mark { background: #ffe680; padding: 0 0.1rem; }
   .podglad-strona { width: 100%; border: 1px solid var(--ramka); border-radius: 4px; }
   .cytat { font-style: italic; color: var(--przygaszony); border-left: 2px solid var(--ramka); padding-left: 0.7rem; margin: 0.5rem 0; }
+  .uwaga-stylu { color: var(--uwaga); }
   .czekam { color: var(--przygaszony); font-style: italic; }
   @media (max-width: 1100px) { .uklad, .uklad.bez-podgladu { grid-template-columns: 1fr; } }
 </style>
@@ -142,6 +143,7 @@
                    swieci nie tam, gdzie trzeba. #}
                 {% if zdanie.source %}<a class="znacznik" href="?podglad={{ zdanie.source.chunk_id }}&w={{ w.id }}&z={{ loop.index0 }}">{{ zdanie.source.marker }}</a>{% endif %}
                 {% if not zdanie.verified %}<br><small>Nie znalazłem tego zdania w źródle — sprawdź przed użyciem.</small>{% endif %}
+                {% if zdanie.styl %}<br><small class="uwaga-stylu">{{ zdanie.styl | join(" · ") }}</small>{% endif %}
               </p>
               {% endfor %}
             </div>
