@@ -15,9 +15,13 @@ import fitz
 
 SKALA = 2.0  # czytelnosc na ekranie
 
-# Zolty, w bajtach - pixmap operuje na wartosciach 0-255, nie 0-1.
-KOLOR_ZAZNACZENIA_RGB = (255, 200, 0)
-GRUBOSC_RAMKI = 3
+# Ile punktow dokladamy nad i pod cytatem. Musi byc wieksze niz obserwowane
+# przesuniecie renderu (okolo 20 punktow), zeby cytat na pewno zostal w kadrze,
+# i na tyle duze, zeby bylo widac kontekst - sasiednie zdania.
+ZAPAS = 70
+
+# Fragment jest mniejszy niz cala strona, wiec moze byc renderowany dokladniej.
+SKALA_FRAGMENTU = 3.0
 
 # Ile slow pod rzad wystarczy, zeby uznac miejsce za znalezione.
 MINIMUM_SLOW = 8
@@ -87,51 +91,41 @@ def _dopasuj_slowa(slowa_strony: list[str], slowa_cytatu: list[str]) -> list[int
 
 
 def render_strony(pdf_bytes: bytes, numer_strony: int, cytat: str | None = None) -> bytes:
-    """Zwraca PNG strony. Gdy podano cytat, obrysowuje go na zolto.
+    """Zwraca PNG strony, a przy podanym cytacie - sam fragment wokol niego.
 
-    Rysujemy na GOTOWYM OBRAZIE, nie na stronie PDF. Powod jest empiryczny:
-    ramka narysowana dokladnie na prostokacie slowa zwroconym przez
-    get_text() ladowala w tej ksiazce linijke nizej. Uklad wspolrzednych
-    odczytu tekstu i rysowania po stronie rozjezdza sie (mediabox zaczyna sie
-    od y=7,83, cropbox od zera), a zgadywanie poprawki jest kruche.
+    Nie rysujemy ramki. Probowalem tego dlugo i nie dziala: w tej ksiazce
+    render jest przesuniety wzgledem wspolrzednych z get_text o okolo dwadziescia
+    punktow, czyli linijke. Sprawdzone trzema sposobami - rysowaniem po stronie,
+    adnotacja PDF i rysowaniem po gotowym obrazie - wszystkie ladowaly w tym
+    samym zlym miejscu, wiec przyczyna lezy w samych wspolrzednych, nie w
+    sposobie rysowania. Nie wynika ani z mediabox, ani z cropbox.
 
-    Na pixmapie przeliczenie jest jednoznaczne: piksel = (punkt - poczatek
-    strony) * skala. Nie da sie pomylic ukladow, bo jest tylko jeden.
+    Zamiast zgadywac poprawke, ktora i tak byla by krucha dla innych ksiazek,
+    WYCINAMY fragment strony wokol cytatu z zapasem. Zapas pochlania blad:
+    nawet przesuniety o linijke cytat zostaje w kadrze, a redaktor widzi
+    powiekszony kawalek ksiazki zamiast calej strony. Sam cytat jest przy tym
+    podswietlony w tekscie obok (patrz app/api/routes.py::_rozbij_na_cytat),
+    wiec wiadomo, ktore zdanie czytac.
     """
     with fitz.open(stream=pdf_bytes, filetype="pdf") as dokument:
         if not 1 <= numer_strony <= dokument.page_count:
             raise ValueError(f"strona {numer_strony} nie istnieje")
         strona = dokument[numer_strony - 1]
 
-        prostokaty: list[tuple[float, float, float, float]] = []
+        obszar = None
         if cytat:
             slowa = strona.get_text("words")
             znormalizowane = [_normalizuj(w[4]) for w in slowa]
             indeksy = _dopasuj_slowa(znormalizowane, [_normalizuj(w) for w in cytat.split() if _normalizuj(w)])
-            prostokaty = [tuple(slowa[i][:4]) for i in indeksy]
+            if indeksy:
+                gora = min(slowa[i][1] for i in indeksy)
+                dol = max(slowa[i][3] for i in indeksy)
+                obszar = fitz.Rect(
+                    strona.rect.x0,
+                    max(strona.rect.y0, gora - ZAPAS),
+                    strona.rect.x1,
+                    min(strona.rect.y1, dol + ZAPAS),
+                )
 
-        obraz = strona.get_pixmap(matrix=fitz.Matrix(SKALA, SKALA))
-        poczatek = strona.rect
-
-    for x0, y0, x1, y1 in prostokaty:
-        _obrysuj(obraz, x0 - poczatek.x0, y0 - poczatek.y0, x1 - poczatek.x0, y1 - poczatek.y0)
-
-    return obraz.tobytes("png")
-
-
-def _obrysuj(obraz, x0: float, y0: float, x1: float, y1: float) -> None:
-    """Zolta ramka wokol slowa, na pixmapie.
-
-    Ramka, nie wypelnienie: pixmap nie ma przezroczystosci, wiec wypelnienie
-    zamalowaloby tekst, ktory redaktor ma przeczytac."""
-    lewo, gora = int(x0 * SKALA), int(y0 * SKALA)
-    prawo, dol = int(x1 * SKALA), int(y1 * SKALA)
-    lewo, gora = max(0, lewo), max(0, gora)
-    prawo, dol = min(obraz.width, prawo), min(obraz.height, dol)
-    if prawo <= lewo or dol <= gora:
-        return
-
-    for y in (gora, dol - GRUBOSC_RAMKI):
-        obraz.set_rect(fitz.IRect(lewo, y, prawo, y + GRUBOSC_RAMKI), KOLOR_ZAZNACZENIA_RGB)
-    for x in (lewo, prawo - GRUBOSC_RAMKI):
-        obraz.set_rect(fitz.IRect(x, gora, x + GRUBOSC_RAMKI, dol), KOLOR_ZAZNACZENIA_RGB)
+        skala = SKALA_FRAGMENTU if obszar else SKALA
+        return strona.get_pixmap(matrix=fitz.Matrix(skala, skala), clip=obszar).tobytes("png")

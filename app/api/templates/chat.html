@@ -191,11 +191,15 @@
         {%- endfor -%}
       </p>
       {% if podglad.source_kind == "pdf" %}
-      <img class="podglad-strona" src="/zrodla/{{ podglad.source_id }}/strona/{{ podglad.page }}.png" alt="Strona {{ podglad.page }}">
+      {# Fragment strony wokol cytatu, nie cala strona: redaktor ma zobaczyc
+         MIEJSCE w ksiazce, a nie szukac zdania wsrod kilku tysiecy znakow. #}
+      <img class="podglad-strona" src="/zrodla/{{ podglad.source_id }}/strona/{{ podglad.page }}.png?cytat={{ podglad.zaznacz | urlencode }}" alt="Fragment strony {{ podglad.page }}">
+      <p class="podpowiedz">Fragment strony {{ podglad.page }}.
+        <a href="/zrodla/{{ podglad.source_id }}?strona={{ podglad.page }}&rozmowa={{ rozmowa.id }}&akapit={{ podglad.chunk_id }}">Zobacz całą stronę</a>
+      </p>
       {# Ekran ksiazki w panelu, nie surowy PDF: przy pliku wazacym kilka
          megabajtow przegladarkowy czytnik wymaga obslugi zakresow bajtow i
          przy jej braku nie pokazuje nic. Poza tym redaktor zostaje w panelu. #}
-      <p><a href="/zrodla/{{ podglad.source_id }}?strona={{ podglad.page }}&rozmowa={{ rozmowa.id }}&akapit={{ podglad.chunk_id }}">otwórz całą książkę</a></p>
       {% endif %}
     </div>
   </div>
