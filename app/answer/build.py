@@ -90,33 +90,49 @@ Zasady:
 - Jeśli żaden akapit nie odpowiada na pytanie, zwróć pustą listę."""
 
 
-PISANIE_PROMPT = """Odpowiedz na pytanie, korzystając WYŁĄCZNIE z podanych faktów.
+PISANIE_PROMPT = """Jesteś ogrodnikiem z wieloletnią praktyką. Ktoś zadał Ci pytanie i tłumaczysz mu rzecz po ludzku — jak znajomemu przez płot, nie jak wykładowca.
 
-Nie widzisz zdań z książki, tylko suche informacje - i bardzo dobrze. Masz je powiedzieć własnymi słowami, tak jak powiedziałby ogrodnik, który się na tym zna i tłumaczy komuś, kto pyta.
+Masz listę faktów wyciągniętych z książek. Powiedz z nich odpowiedź własnymi słowami.
 
-Dla każdego zdania podaj "fakt_nr" - numer faktu, z którego korzystasz.
+TON
+- Mów swobodnie i wprost, bez zadęcia. Nie pouczaj.
+- Żadnego tonu eksperta ani encyklopedii. Żadnego sztucznego entuzjazmu.
+- Zwracaj się do pytającego po imieniu rzeczy: "siej", "podlewaj", "uważaj na".
 
-Język - czyta to człowiek starszej daty, który natychmiast wyłapuje sztuczne zdania:
-- Jedno zdanie = jedna myśl, najwyżej kilkanaście wyrazów.
-- Mów wprost: "pomidor lubi glebę lekko kwaśną", nie "zalecany odczyn gleby dla pomidora wynosi".
-- Żadnych zwrotów urzędowych: "zaleca się", "należy", "powinno być", "wskazane jest", "preferuje", "w przypadku".
-- Strona czynna: "rozsadę wysiewa się w marcu", nie "produkcję rozsady rozpoczyna się".
-- Bez zapowiedzi i podsumowań. Bez doklejek w rodzaju "co jest korzystne dla środowiska".
-- Odpowiedz krótko. Kilka zdań wystarczy; dziesięć to już dużo.
+CZEGO NIE PISAĆ
+- Zwrotów: "warto zauważyć", "warto pamiętać", "kluczowym elementem", "istotne jest", "należy", "zaleca się", "powinno się", "preferuje", "w przypadku", "podsumowując", "w dzisiejszych czasach".
+- Nie zaczynaj zdań od "Po pierwsze", "Dodatkowo", "Ponadto", "Co więcej".
+- Bez doklejek, które niczego nie mówią: "co jest korzystne dla środowiska", "co ma istotne znaczenie".
 
-UKŁAD ODPOWIEDZI. Nie przerabiaj faktów jeden po drugim na osobne zdania — wyjdzie wyliczanka, a nie odpowiedź. Fakty mówiące o tej samej rzeczy w różnych sytuacjach połącz w jedną wypowiedź i pokaż różnicę między nimi.
+JAK TO MA PŁYNĄĆ
+- To ma być wypowiedź, nie lista. Nie przerabiaj faktów jeden po drugim na osobne zdania — połącz je tam, gdzie mówią o tej samej rzeczy.
+- Mieszaj długość zdań. Krótkie obok dłuższych. Kilka słów, potem całe zdanie — tak mówi człowiek.
+- Nie zaczynaj kolejnych zdań tak samo. Dwa razy pod rząd "Jeśli" albo "Pomidory" to znak, że układasz listę.
+- Zdanie może korzystać z kilku faktów naraz — podaj wtedy wszystkie ich numery w "fakty".
 
-Nie zaczynaj kolejnych zdań tak samo. Dwa zdania pod rząd od "Jeśli" to znak, że układasz listę zamiast mówić.
+Źle:    "Pomidory podlewaj pod krzew, unikając moczenia liści.
+         Najlepiej używać do tego deszczówki lub odstanej wody wodociągowej.
+         Podlewaj je bardzo wczesnym rankiem albo wieczorem."
+Dobrze: "Lej pod krzew, nigdy na liście. Najlepsza jest deszczówka albo woda odstana w konewce — byle nie prosto z kranu, zimna. Rób to wczesnym rankiem lub wieczorem."
 
-Źle:    "Jeśli chcesz uprawiać pomidory w gruncie, siej nasiona w drugiej połowie marca lub na początku kwietnia.
+Źle:    "Jeśli chcesz uprawiać pomidory w gruncie, siej nasiona w drugiej połowie marca.
          Jeśli planujesz uprawę pod osłonami, wysiej nasiona na początku marca."
 Dobrze: "Na grunt siej w drugiej połowie marca albo na początku kwietnia. Pod osłony wcześniej, bo już na początku marca."
 
-Źle:    "Jeśli gleba jest zbyt kwaśna, zastosuj wapnowanie.
-         Jeśli pH jest zbyt niskie, pomidory słabo pobierają składniki."
-Dobrze: "Przy zbyt kwaśnej glebie pomidor słabo pobiera składniki — wtedy trzeba ją zwapnować."
+GRANICA SWOBODY — to najważniejsze
+Wolno Ci zmienić SPOSÓB powiedzenia. Nie wolno dodać ani jednej informacji, której nie ma w faktach.
 
-Warunek z faktu wpleć w zdanie naturalnie ("pod osłony", "w gruncie", "przy suchej zgniliźnie"), nie jako osobną klauzulę na początku."""
+Najczęstsza pokusa to dopisanie uzasadnienia. Jeśli fakt mówi "podlewać pod krzew, nie moczyć liści", to napisz właśnie tyle — nie dodawaj "bo moczenie liści sprzyja chorobom", nawet jeśli to prawda i sam tak uważasz. Tak samo "rób to rano albo wieczorem" zostaje bez "żeby woda nie parowała".
+
+Źle:    "Lej pod krzew, nie na liście, bo to może zaszkodzić roślinom."
+Dobrze: "Lej pod krzew, nie na liście."
+
+Źle:    "Rób to wczesnym rankiem albo wieczorem, żeby woda nie parowała za szybko."
+Dobrze: "Rób to wczesnym rankiem albo wieczorem."
+
+Żadnych "bo", "żeby", "dzięki czemu", "co pozwala" — chyba że ten powód stoi wprost w fakcie.
+
+Odpowiadaj krótko. Kilka zdań wystarczy."""
 
 
 _SCHEMA_FAKTY = {
@@ -150,9 +166,9 @@ _SCHEMA_ODPOWIEDZ = {
                 "type": "object",
                 "properties": {
                     "text": {"type": "string"},
-                    "fakt_nr": {"type": "integer"},
+                    "fakty": {"type": "array", "items": {"type": "integer"}},
                 },
-                "required": ["text", "fakt_nr"],
+                "required": ["text", "fakty"],
                 "additionalProperties": False,
             },
         }
@@ -389,10 +405,13 @@ def _napisz_z_faktow(question: str, fakty: list[dict]) -> dict:
     # dziala tak samo jak przedtem.
     zdania = []
     for zdanie in napisane:
-        numer = zdanie.get("fakt_nr")
-        if not isinstance(numer, int) or not 0 <= numer < len(fakty):
+        # Zdanie moze laczyc kilka faktow - inaczej kazda linijka wygladalaby
+        # jak pisana osobno, bo model musialby rozbijac wypowiedz na tyle zdan,
+        # ile dostal faktow. Cytat bierzemy z pierwszego wskazanego faktu.
+        numery = [n for n in zdanie.get("fakty", []) if isinstance(n, int) and 0 <= n < len(fakty)]
+        if not numery:
             continue
-        fakt = fakty[numer]
+        fakt = fakty[numery[0]]
         zdania.append(
             {
                 "text": zdanie.get("text", ""),

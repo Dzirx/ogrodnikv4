@@ -43,6 +43,10 @@ _DOKLEJKI = [
     (re.compile(r",\s*co\s+ma\s+istotne\s+znaczenie\b", re.I), "co ma istotne znaczenie"),
     (re.compile(r"^\s*(warto|należy)\s+pamiętać\b", re.I), "warto pamiętać"),
     (re.compile(r"^\s*podsumowując\b", re.I), "podsumowując"),
+    (re.compile(r"\bkluczow(ym|e)\s+(elementem|jest)\b", re.I), "kluczowym elementem"),
+    (re.compile(r"\bistotne\s+jest\b", re.I), "istotne jest"),
+    (re.compile(r"\bw\s+dzisiejszych\s+czasach\b", re.I), "w dzisiejszych czasach"),
+    (re.compile(r"^\s*(po\s+pierwsze|dodatkowo|ponadto|co\s+więcej)\b", re.I), "łącznik na początku zdania"),
 ]
 
 # "Dla uprawy gruntowej..." zamiast "W uprawie gruntowej..." - zdanie wskazane
