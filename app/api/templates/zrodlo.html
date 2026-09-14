@@ -12,7 +12,10 @@
 </style>
 {% endblock %}
 {% block content %}
-<p><a href="/zrodla">← wszystkie źródła</a></p>
+<p>
+  {% if powrot %}<a href="{{ powrot }}">← wróć do rozmowy</a> ·{% endif %}
+  <a href="/zrodla">wszystkie źródła</a>
+</p>
 <h1>{{ zrodlo.title }}</h1>
 <p class="podpowiedz">
   {% if zrodlo.author %}{{ zrodlo.author }} · {% endif %}

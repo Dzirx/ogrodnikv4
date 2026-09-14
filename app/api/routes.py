@@ -216,7 +216,14 @@ async def dodaj_zrodlo(
 
 
 @router.get("/zrodla/{source_id}", response_class=HTMLResponse)
-def zrodlo(request: Request, source_id: int, strona: int = 1, db: Session = Depends(get_db)):
+def zrodlo(
+    request: Request,
+    source_id: int,
+    strona: int = 1,
+    rozmowa: int | None = None,
+    akapit: int | None = None,
+    db: Session = Depends(get_db),
+):
     """Podgląd książki w panelu.
 
     Przedtem tytuł na liście prowadził do surowego pliku PDF w nowej karcie -
@@ -241,6 +248,14 @@ def zrodlo(request: Request, source_id: int, strona: int = 1, db: Session = Depe
             "strony": numery,
             "biezaca": biezaca,
             "akapity": akapity,
+            # Powrót tam, skąd redaktor przyszedł - razem z otwartym podglądem
+            # akapitu. Bez tego wejście w książkę z rozmowy było ślepą uliczką:
+            # zostawał przycisk wstecz przeglądarki albo szukanie wątku od nowa.
+            "powrot": (
+                f"/rozmowy/{rozmowa}?podglad={akapit}" if rozmowa and akapit
+                else f"/rozmowy/{rozmowa}" if rozmowa
+                else None
+            ),
             **_wspolne(db),
         },
     )

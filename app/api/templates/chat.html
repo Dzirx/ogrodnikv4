@@ -185,7 +185,7 @@
       {# Ekran ksiazki w panelu, nie surowy PDF: przy pliku wazacym kilka
          megabajtow przegladarkowy czytnik wymaga obslugi zakresow bajtow i
          przy jej braku nie pokazuje nic. Poza tym redaktor zostaje w panelu. #}
-      <p><a href="/zrodla/{{ podglad.source_id }}?strona={{ podglad.page }}">otwórz całą książkę</a></p>
+      <p><a href="/zrodla/{{ podglad.source_id }}?strona={{ podglad.page }}&rozmowa={{ rozmowa.id }}&akapit={{ podglad.chunk_id }}">otwórz całą książkę</a></p>
       {% else %}
       <p class="cytat">{{ podglad.text }}</p>
       {% endif %}
