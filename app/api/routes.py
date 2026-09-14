@@ -4,6 +4,8 @@ Redaktor ma robić trzy rzeczy: dodać źródło, zapytać, rozstrzygnąć rozbi
 Nic poza tym nie ma prawa pojawić się w nawigacji.
 """
 
+import re
+
 from fastapi import APIRouter, Depends, Form, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
@@ -269,11 +271,16 @@ def plik_zrodla(source_id: int, db: Session = Depends(get_db)):
     source = db.get(Source, source_id)
     if source is None:
         raise HTTPException(404, "Nie ma takiego źródła")
+    rozszerzenie = "pdf" if source.kind == "pdf" else "txt"
     typ = "application/pdf" if source.kind == "pdf" else "text/plain; charset=utf-8"
+    # Nazwa pliku w naglowku - inaczej przegladarka zapisuje go jako "plik".
+    # Przegladanie odbywa sie na ekranie zrodla (strony jako obrazy), wiec tu
+    # chodzi wylacznie o pobranie oryginalu.
+    nazwa = re.sub(r"[^\w\- ]", "", source.title).strip()[:80] or f"zrodlo-{source.id}"
     return Response(
         content=download_bytes(source.object_key),
         media_type=typ,
-        headers={"Content-Disposition": "inline"},
+        headers={"Content-Disposition": f'attachment; filename="{nazwa}.{rozszerzenie}"'},
     )
 
 

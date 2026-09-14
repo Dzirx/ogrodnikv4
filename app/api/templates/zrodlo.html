@@ -28,6 +28,13 @@
       <a href="/zrodla/{{ zrodlo.id }}?strona={{ s }}" class="{% if s == biezaca %}biezaca{% endif %}">Strona {{ s }}</a>
       {% endfor %}
     </div>
+    {# Lista ma tyle pozycji, ile stron w ksiazce - bez przewiniecia redaktor
+       po wejsciu ze znacznika widzi "Strona 1" i musi szukac tej, ktora
+       faktycznie oglada. #}
+    <script>
+      var biezaca = document.querySelector('.lista-stron .biezaca');
+      if (biezaca) { biezaca.scrollIntoView({ block: 'center' }); }
+    </script>
   </div>
 
   <div>
