@@ -95,6 +95,67 @@ def rozmowa(
     )
 
 
+def _rozbij_na_cytat(akapit: str, cytat: str) -> list[dict]:
+    """Dzieli akapit na części przed cytatem, cytat i po nim.
+
+    Podświetlamy cytat w TEKŚCIE, nie na obrazie strony. Rysowanie na stronie
+    PDF okazało się zawodne: współrzędne z odczytu tekstu i z renderu rozjeżdżają
+    się w tej książce o całą linijkę (mediabox zaczyna się od y=7,83, cropbox od
+    zera), więc żółta ramka lądowała przy sąsiednim zdaniu i myliła bardziej,
+    niż pomagała. W tekście nie ma żadnych układów współrzędnych do pomylenia.
+
+    Porównujemy po uproszczeniu białych znaków i myślników, bo model przepisuje
+    cytat z PDF-a, który łamie wiersze gdzie popadnie."""
+    if not cytat or cytat == akapit:
+        return [{"tekst": akapit, "cytat": bool(cytat)}]
+
+    uproszczony_akapit = _uprosc(akapit)
+    pozycja = uproszczony_akapit.find(_uprosc(cytat))
+    if pozycja < 0:
+        return [{"tekst": akapit, "cytat": False}]
+
+    # Pozycję z tekstu uproszczonego przekładamy na oryginał, licząc znaki
+    # nie-białe - inaczej podświetlenie przesunęłoby się o każdą zwiniętą spację.
+    granice = _granice_w_oryginale(akapit, pozycja, len(_uprosc(cytat)))
+    if granice is None:
+        return [{"tekst": akapit, "cytat": False}]
+
+    poczatek, koniec = granice
+    czesci = []
+    if akapit[:poczatek].strip():
+        czesci.append({"tekst": akapit[:poczatek], "cytat": False})
+    czesci.append({"tekst": akapit[poczatek:koniec], "cytat": True})
+    if akapit[koniec:].strip():
+        czesci.append({"tekst": akapit[koniec:], "cytat": False})
+    return czesci
+
+
+def _uprosc(tekst: str) -> str:
+    tekst = tekst.replace("\u2013", "-").replace("\u2014", "-").replace("\u00a0", " ")
+    return re.sub(r"\s+", " ", tekst).strip().lower()
+
+
+def _granice_w_oryginale(akapit: str, pozycja: int, dlugosc: int) -> tuple[int, int] | None:
+    """Przelicza pozycję z tekstu uproszczonego na indeksy w oryginale."""
+    licznik = 0
+    poczatek = koniec = None
+    poprzedni_bialy = True
+    for indeks, znak in enumerate(akapit):
+        bialy = znak.isspace()
+        if bialy and poprzedni_bialy:
+            continue
+        if licznik == pozycja and poczatek is None:
+            poczatek = indeks
+        if licznik == pozycja + dlugosc:
+            koniec = indeks
+            break
+        licznik += 1
+        poprzedni_bialy = bialy
+    if poczatek is None:
+        return None
+    return poczatek, (koniec if koniec is not None else len(akapit))
+
+
 def _podglad(
     db: Session, chunk_id: int | None, message_id: int | None = None, zdanie: int | None = None
 ) -> dict | None:
@@ -124,6 +185,7 @@ def _podglad(
     return {
         "chunk_id": chunk.id,
         "text": chunk.text,
+        "fragmenty": _rozbij_na_cytat(chunk.text, do_zaznaczenia),
         "zaznacz": do_zaznaczenia,
         "page": page.number,
         "source_id": source.id,

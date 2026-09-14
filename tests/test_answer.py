@@ -52,3 +52,28 @@ def test_normalizacja_nie_zmienia_tresci():
 def test_normalizacja_laczy_rozne_mysniki():
     """PDF używa półpauzy, model często przepisuje dywizem."""
     assert normalize("22–28") == normalize("22-28")
+
+
+def test_pierwsze_pytanie_nie_jest_przepisywane():
+    """Bez historii nie ma czego uzupełniać - i nie ma po co płacić za
+    wywołanie modelu."""
+    from app.answer.build import przepisz_pytanie
+
+    assert przepisz_pytanie([], "w jakim pH sadzić pomidory?") == "w jakim pH sadzić pomidory?"
+
+
+def test_przepisanie_wraca_do_oryginalu_gdy_model_zawiedzie(monkeypatch):
+    """Gorsze wyszukiwanie jest lepsze niż brak odpowiedzi."""
+    import app.answer.build as build
+
+    class Zepsuty:
+        class chat:
+            class completions:
+                @staticmethod
+                def create(**_):
+                    raise RuntimeError("model niedostępny")
+
+    monkeypatch.setattr(build, "_openai", Zepsuty)
+    historia = [("user", "wysiew pomidora"), ("assistant", "Wysiewa się w marcu.")]
+
+    assert build.przepisz_pytanie(historia, "a w tunelu?") == "a w tunelu?"

@@ -100,9 +100,57 @@ def quote_is_in_chunk(quote: str, chunk_text: str) -> bool:
     return normalized in normalize(chunk_text)
 
 
-def answer_question(question: str, source_ids: list[int] | None = None) -> dict:
+# Ile ostatnich wiadomosci wystarczy, zeby zrozumiec pytanie doprecyzowujace.
+OKNO_HISTORII = 4
+
+_PRZEPISZ_PROMPT = """Przepisz ostatnie pytanie tak, żeby było zrozumiałe bez historii rozmowy.
+
+Zasady:
+- Zwróć samo przepisane pytanie, bez komentarza.
+- Uzupełnij brakujący podmiot z historii: "a w tunelu?" po pytaniu o wysiew pomidora to "wysiew pomidora w tunelu".
+- Nie dodawaj treści, której w rozmowie nie ma. Nie odpowiadaj na pytanie.
+- Jeśli pytanie jest już samodzielne, zwróć je bez zmian."""
+
+
+def przepisz_pytanie(historia: list[tuple[str, str]], pytanie: str) -> str:
+    """Pytanie zrozumiale bez historii rozmowy.
+
+    Bez tego "a w tunelu?" nie ma czego szukac - wyszukiwanie dostaje trzy
+    slowa bez podmiotu i zwraca przypadkowe akapity.
+
+    To krok WYSZUKIWANIA, nie redagowania: przepisanie nie dotyka zasady, ze
+    tresc odpowiedzi pochodzi wylacznie ze zrodel. Gdy sie nie powiedzie,
+    zostaje oryginalne pytanie - gorsze wyszukiwanie jest lepsze niz brak
+    odpowiedzi."""
+    if not historia:
+        return pytanie
+
+    zapis = "\n".join(
+        f"{'Pytanie' if rola == 'user' else 'Odpowiedź'}: {tekst}"
+        for rola, tekst in historia[-OKNO_HISTORII:]
+    )
+    try:
+        odpowiedz = _openai.chat.completions.create(
+            model=settings.analysis_model,
+            temperature=0,
+            messages=[
+                {"role": "system", "content": _PRZEPISZ_PROMPT},
+                {"role": "user", "content": f"{zapis}\nPytanie: {pytanie}"},
+            ],
+        )
+        return (odpowiedz.choices[0].message.content or "").strip() or pytanie
+    except Exception:
+        return pytanie
+
+
+def answer_question(
+    question: str,
+    source_ids: list[int] | None = None,
+    historia: list[tuple[str, str]] | None = None,
+) -> dict:
     """Zwraca odpowiedz gotowa do pokazania: zdania z cytatami i lista zrodel."""
-    chunk_ids = search(question, source_ids=source_ids)
+    do_wyszukania = przepisz_pytanie(historia or [], question)
+    chunk_ids = search(do_wyszukania, source_ids=source_ids)
     if not chunk_ids:
         return _no_data()
 
@@ -131,7 +179,7 @@ def answer_question(question: str, source_ids: list[int] | None = None) -> dict:
             for chunk in (by_id[cid] for cid in chunk_ids if cid in by_id)
         ]
 
-        raw = _call_model(question, context)
+        raw = _call_model(do_wyszukania, context)
         return _verify(raw, by_id, pages, sources)
     finally:
         db.close()

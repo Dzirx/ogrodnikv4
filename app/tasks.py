@@ -26,17 +26,33 @@ def odpowiedz_na_pytanie(message_id: int) -> None:
         if message is None:
             return
 
-        pytanie = (
+        wczesniejsze = (
             db.query(Message)
-            .filter(Message.conversation_id == message.conversation_id, Message.role == "user")
-            .order_by(Message.id.desc())
-            .first()
+            .filter(Message.conversation_id == message.conversation_id, Message.id < message.id)
+            .order_by(Message.id)
+            .all()
         )
+        pytanie = next((m for m in reversed(wczesniejsze) if m.role == "user"), None)
+        # Historia BEZ ostatniego pytania - ono idzie osobno. Bez tego model
+        # dostawalby je dwa razy.
+        historia = [
+            (m.role, m.text)
+            for m in wczesniejsze
+            if m.text and (pytanie is None or m.id != pytanie.id)
+        ]
+
         rozmowa = db.get(Conversation, message.conversation_id)
         zakres = [s.id for s in rozmowa.sources] if rozmowa else []
 
         try:
-            message.answer_json = answer_question(pytanie.text if pytanie else "", source_ids=zakres)
+            message.answer_json = answer_question(
+                pytanie.text if pytanie else "", source_ids=zakres, historia=historia
+            )
+            # Tekst odpowiedzi zapisujemy osobno: historia rozmowy korzysta z
+            # niego przy przepisywaniu kolejnego pytania.
+            message.text = " ".join(
+                z["text"] for z in message.answer_json.get("sentences", [])
+            ) or (message.answer_json.get("note") or "")
             message.status = "ready"
         except Exception as exc:
             message.answer_json = {"sentences": [], "sources": [], "note": f"Nie udało się: {exc}"}
