@@ -66,6 +66,10 @@
   .pytanie { background: var(--akcent); color: #fff; padding: 0.6rem 0.9rem; border-radius: 10px; margin: 0 0 1rem auto; max-width: 85%; width: fit-content; }
   .odpowiedz { margin-bottom: 2rem; }
   .odpowiedz p { margin: 0 0 0.8rem; }
+  .odpowiedz .zdanie.niepotwierdzone { background: var(--uwaga-tlo); }
+  .uwagi-jezyka { margin-top: 0.5rem; }
+  .uwagi-jezyka > summary { cursor: pointer; color: var(--przygaszony); font-size: 0.85rem; }
+  .uwagi-jezyka ul { margin: 0.4rem 0 0; padding-left: 1.2rem; font-size: 0.85rem; color: var(--przygaszony); }
   .niepotwierdzone { background: var(--uwaga-tlo); border-left: 3px solid var(--uwaga); padding-left: 0.6rem; }
   .znacznik {
     display: inline-block; background: var(--akcent-jasny); color: var(--akcent);
@@ -134,18 +138,28 @@
             <p>{{ w.answer_json.note }}</p>
           {% elif w.answer_json %}
             <div class="odpowiedz">
-              {% for zdanie in w.answer_json.sentences %}
-              <p{% if not zdanie.verified %} class="niepotwierdzone"{% endif %}>
-                {{ zdanie.text }}
-                {# Znacznik wskazuje konkretne ZDANIE, nie tylko akapit: podglad
-                   zaznacza wtedy sam cytat. Akapit potrafi miec szescset znakow
-                   i obejmowac kilka roznych rzeczy - zaznaczony w calosci
-                   swieci nie tam, gdzie trzeba. #}
-                {% if zdanie.source %}<a class="znacznik" href="?podglad={{ zdanie.source.chunk_id }}&w={{ w.id }}&z={{ loop.index0 }}">{{ zdanie.source.marker }}</a>{% endif %}
-                {% if not zdanie.verified %}<br><small>Nie znalazłem tego zdania w źródle — sprawdź przed użyciem.</small>{% endif %}
-                {% if zdanie.styl %}<br><small class="uwaga-stylu">{{ zdanie.styl | join(" · ") }}</small>{% endif %}
+              {# Zdania w JEDNYM akapicie, nie każde w osobnym. Osobne akapity
+                 sprawiały, że odpowiedź wyglądała jak lista pisana linijka po
+                 linijce, nawet gdy tekst był spójny. Znacznik źródła idzie
+                 zaraz za zdaniem, w indeksie górnym - tak jak przypis. #}
+              <p>
+                {%- for zdanie in w.answer_json.sentences -%}
+                  <span class="zdanie{% if not zdanie.verified %} niepotwierdzone{% endif %}">{{ zdanie.text }}</span>{% if zdanie.source %}<a class="znacznik" href="?podglad={{ zdanie.source.chunk_id }}&w={{ w.id }}&z={{ loop.index0 }}" title="{{ zdanie.source.source_title }}, strona {{ zdanie.source.page }}">{{ zdanie.source.marker }}</a>{% endif %}{{ " " }}
+                {%- endfor -%}
               </p>
-              {% endfor %}
+              {% set uwagi = w.answer_json.sentences | selectattr("styl") | list %}
+              {% set niepewne = w.answer_json.sentences | rejectattr("verified") | list %}
+              {% if niepewne %}
+              <p><small class="uwaga-stylu">Nie znalazłem w źródle: {{ niepewne | map(attribute="text") | join(" · ") }}</small></p>
+              {% endif %}
+              {% if uwagi %}
+              <details class="uwagi-jezyka">
+                <summary>Uwagi do języka ({{ uwagi | length }})</summary>
+                <ul>
+                  {% for z in uwagi %}<li>„{{ z.text }}" — {{ z.styl | join(", ") }}</li>{% endfor %}
+                </ul>
+              </details>
+              {% endif %}
             </div>
           {% endif %}
         {% endfor %}
