@@ -42,11 +42,23 @@
      Podgląd po prawej to prośba wprost: redaktor przy każdym cytacie tracił
      kontekst i musiał szukać, z której strony pochodzi. Teraz klika znacznik
      i widzi tę stronę obok tekstu. */
-  .uklad { display: grid; grid-template-columns: 15rem minmax(0, 1fr) minmax(0, 1fr); gap: 1rem; align-items: start; }
+  /* Cały układ mieści się w oknie, a przewija się każda kolumna z osobna.
+     Inaczej długa historia wątków albo długa rozmowa wypychają stronę i po
+     wszystko trzeba jechać na dół. */
+  .uklad { display: grid; grid-template-columns: 15rem minmax(0, 1fr) minmax(0, 1fr); gap: 1rem; height: calc(100vh - 7rem); }
   .uklad.bez-podgladu { grid-template-columns: 15rem minmax(0, 1fr); }
-  .kolumna { background: var(--karta); border: 1px solid var(--ramka); border-radius: 8px; }
+  .kolumna { background: var(--karta); border: 1px solid var(--ramka); border-radius: 8px; display: flex; flex-direction: column; min-height: 0; }
   .kolumna > .naglowek { padding: 0.7rem 1rem; border-bottom: 1px solid var(--ramka); font-weight: 600; font-size: 0.9rem; }
   .kolumna > .tresc { padding: 1rem; }
+  /* Rozmowa przewija się we własnym oknie, a pole pytania stoi pod nią na
+     stałe. Inaczej po godzinie rozmowy trzeba zjechać na sam dół, żeby
+     w ogóle dosięgnąć pola. */
+  .kolumna > .tresc, .kolumna > .watki { overflow-y: auto; min-height: 0; }
+  .kolumna > .przewijana { flex: 1; }
+  .stopka-rozmowy { border-top: 1px solid var(--ramka); padding: 0.8rem 1rem; background: var(--karta); border-radius: 0 0 8px 8px; }
+  .stopka-rozmowy form { display: flex; gap: 0.5rem; align-items: center; }
+  .stopka-rozmowy .pole { flex: 1; margin: 0; }
+  .stopka-rozmowy .wybor-zrodel { margin-top: 0.6rem; border-top: 0; padding-top: 0; }
   .watki { list-style: none; margin: 0; padding: 0; }
   .starsze-watki a { color: var(--przygaszony); font-size: 0.85rem; }
   .watki li { border-bottom: 1px solid var(--ramka); }
@@ -129,9 +141,9 @@
     </ul>
   </div>
 
-  <div class="kolumna">
+  <div class="kolumna rozmowa">
     <div class="naglowek">{% if rozmowa %}{{ rozmowa.title }}{% else %}Zapytaj o swoje źródła{% endif %}</div>
-    <div class="tresc">
+    <div class="tresc przewijana" id="przebieg">
       {% if not rozmowa %}
         {% if zrodla %}
         <p>Odpowiedź powstanie wyłącznie z Twoich źródeł — przy każdej informacji
@@ -228,30 +240,38 @@
           {% endif %}
         {% endfor %}
 
-        <form method="post" action="/rozmowy/{{ rozmowa.id }}/pytania">
-          <div class="pole"><input type="text" name="pytanie" placeholder="Zadaj kolejne pytanie" required autofocus></div>
-          <button type="submit">Wyślij</button>
-        </form>
-
-        {# Zwiniete: przy zwyklym zadawaniu pytan zakres jest ustawiony raz i
-           nie ma po co zajmowac miejsca. Podsumowanie w naglowku mowi, z czego
-           rozmowa czerpie, bez rozwijania. #}
-        <details class="wybor-zrodel">
-          <summary>
-            Czerpie z:
-            {%- if rozmowa.sources %} {{ rozmowa.sources|length }} z {{ zrodla|length }} książek
-            {%- else %} wszystkich książek ({{ zrodla|length }}){% endif %}
-          </summary>
-          <form method="post" action="/rozmowy/{{ rozmowa.id }}/zrodla">
-            {{ wybor_zrodel(pogrupowane, rozmowa.sources) }}
-            <p>
-              <button type="submit" class="drugorzedny">Zmień zakres</button>
-              <span class="podpowiedz">Dotyczy kolejnych pytań.</span>
-            </p>
-          </form>
-        </details>
       {% endif %}
     </div>
+
+    {# Pole pytania przypięte pod rozmową, nie doklejone na jej końcu. Po
+       godzinie rozmowy trzeba było zjechać na sam dół, żeby zadać kolejne
+       pytanie - przewija się sama rozmowa, nie cała strona. #}
+    {% if rozmowa %}
+    <div class="stopka-rozmowy">
+      <form method="post" action="/rozmowy/{{ rozmowa.id }}/pytania">
+        <div class="pole"><input type="text" name="pytanie" placeholder="Zadaj kolejne pytanie" required autofocus></div>
+        <button type="submit">Wyślij</button>
+      </form>
+
+      {# Zwiniete: przy zwyklym zadawaniu pytan zakres jest ustawiony raz i
+         nie ma po co zajmowac miejsca. Podsumowanie w naglowku mowi, z czego
+         rozmowa czerpie, bez rozwijania. #}
+      <details class="wybor-zrodel">
+        <summary>
+          Czerpie z:
+          {%- if rozmowa.sources %} {{ rozmowa.sources|length }} z {{ zrodla|length }} książek
+          {%- else %} wszystkich książek ({{ zrodla|length }}){% endif %}
+        </summary>
+        <form method="post" action="/rozmowy/{{ rozmowa.id }}/zrodla">
+          {{ wybor_zrodel(pogrupowane, rozmowa.sources) }}
+          <p>
+            <button type="submit" class="drugorzedny">Zmień zakres</button>
+            <span class="podpowiedz">Dotyczy kolejnych pytań.</span>
+          </p>
+        </form>
+      </details>
+    </div>
+    {% endif %}
   </div>
 
   {% if podglad %}
@@ -288,6 +308,12 @@
 </div>
 
 <script>
+  // Rozmowa otwiera sie na ostatniej wiadomosci, nie na pierwszej. Okno
+  // przewija sie samo, wiec bez tego po wejsciu w dlugi watek widac pytanie
+  // sprzed godziny.
+  var przebieg = document.getElementById('przebieg');
+  if (przebieg) { przebieg.scrollTop = przebieg.scrollHeight; }
+
   // Kopiowanie i edycja odpowiedzi - jedyny skrypt poza zaznaczaniem grupy
   // zrodel. Bez niego redaktor musialby zaznaczac tekst myszka.
   document.querySelectorAll('[data-kopiuj]').forEach(function (przycisk) {
