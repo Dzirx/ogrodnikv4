@@ -49,26 +49,29 @@ def bez_powtorzen(zrodla: list[int]) -> list[int]:
     return list(dict.fromkeys(zrodla))
 
 
-def _pogrupuj_zrodla(zrodla: list[Source]) -> list[tuple[str | None, list[dict]]]:
-    """Źródła w grupach po etykietach, każde pokazane RAZ.
+def _pogrupuj_zrodla(zrodla: list[Source]) -> list[tuple[str | None, list[Source]]]:
+    """Źródła w grupach po etykietach, żeby dało się zaznaczyć temat naraz.
 
-    Książka z dwiema etykietami stała wcześniej w dwóch grupach i wyglądało to
-    na dwie pozycje. Gorzej: odznaczenie jednej kopii niczego nie zmieniało, bo
-    druga trzymała książkę w zakresie - trzeba było znaleźć obie.
+    Źródło z kilkoma etykietami stoi w KAŻDEJ z nich - po to są etykiety:
+    zaznaczenie "uprawa pod osłonami" ma wziąć wszystkie książki o tym temacie,
+    także te, które mają obok drugą etykietę.
 
-    Teraz książka stoi pod pierwszą swoją etykietą, a pozostałe widać obok
-    tytułu. Źródła bez etykiety idą na koniec, bez nagłówka."""
-    grupy: dict[str, list[dict]] = {}
-    bez_etykiety: list[dict] = []
+    Ta sama książka pokazuje się więc w kilku miejscach, a jej pola wyboru
+    trzymają się razem: zaznaczenie albo odznaczenie jednego przestawia
+    pozostałe (skrypt w chat.html). Bez tego odznaczenie jednej kopii niczego
+    nie zmieniało, bo druga trzymała książkę w zakresie.
+
+    Źródła bez etykiety idą na koniec, bez nagłówka."""
+    grupy: dict[str, list[Source]] = {}
+    bez_etykiety: list[Source] = []
     for zrodlo in zrodla:
-        etykiety = sorted(e.name for e in zrodlo.labels)
-        wpis = {"zrodlo": zrodlo, "pozostale": etykiety[1:]}
-        if etykiety:
-            grupy.setdefault(etykiety[0], []).append(wpis)
+        if zrodlo.labels:
+            for etykieta in zrodlo.labels:
+                grupy.setdefault(etykieta.name, []).append(zrodlo)
         else:
-            bez_etykiety.append(wpis)
+            bez_etykiety.append(zrodlo)
 
-    wynik: list[tuple[str | None, list[dict]]] = sorted(grupy.items())
+    wynik: list[tuple[str | None, list[Source]]] = sorted(grupy.items())
     if bez_etykiety:
         wynik.append((None, bez_etykiety))
     return wynik

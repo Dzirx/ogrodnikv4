@@ -16,23 +16,39 @@
       <input type="checkbox" class="zaznacz-grupe"> <strong>{{ etykieta }}</strong>
     </label>
     {% endif %}
-    {% for wpis in lista %}
-    <label><input type="checkbox" name="zrodla" value="{{ wpis.zrodlo.id }}"
-      {% if wybrane is none or not wybrane or wpis.zrodlo in wybrane %}checked{% endif %}>
-      <span>{{ wpis.zrodlo.title }}{% if wpis.pozostale %}
-        <small class="podpowiedz">· {{ wpis.pozostale | join(", ") }}</small>{% endif %}</span></label>
+    {% for z in lista %}
+    <label><input type="checkbox" name="zrodla" value="{{ z.id }}"
+      {% if wybrane is none or not wybrane or z in wybrane %}checked{% endif %}> {{ z.title }}</label>
     {% endfor %}
   </div>
   {% endfor %}
   <script>
-    // Jedyny skrypt w panelu: zaznaczenie calej grupy. Bez niego redaktor
-    // klika po jednej ksiazce przy kazdym pytaniu.
+    // Zaznaczenie calej grupy - bez niego redaktor klika po jednej ksiazce
+    // przy kazdym pytaniu.
     document.querySelectorAll('.zaznacz-grupe').forEach(function (grupa) {
       grupa.addEventListener('change', function () {
         grupa.closest('.grupa-zrodel')
           .querySelectorAll('input[name="zrodla"]')
-          .forEach(function (pole) { pole.checked = grupa.checked; });
+          .forEach(function (pole) {
+            pole.checked = grupa.checked;
+            pole.dispatchEvent(new Event('zmiana-ksiazki', { bubbles: true }));
+          });
       });
+    });
+
+    // Ksiazka z dwiema etykietami stoi w dwoch grupach - to celowe, bo
+    // zaznaczenie tematu ma wziac wszystkie jego ksiazki. Ale jej pola wyboru
+    // musza trzymac sie razem: bez tego odznaczenie jednej kopii nic nie dawalo,
+    // druga trzymala ksiazke w zakresie.
+    function zsynchronizuj(pole) {
+      document.querySelectorAll('input[name="zrodla"][value="' + pole.value + '"]')
+        .forEach(function (blizniak) {
+          if (blizniak !== pole) { blizniak.checked = pole.checked; }
+        });
+    }
+    document.querySelectorAll('input[name="zrodla"]').forEach(function (pole) {
+      pole.addEventListener('change', function () { zsynchronizuj(pole); });
+      pole.addEventListener('zmiana-ksiazki', function () { zsynchronizuj(pole); });
     });
   </script>
 </div>
