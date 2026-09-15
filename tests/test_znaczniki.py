@@ -98,3 +98,62 @@ def test_nieznany_numer_zostaje_tekstem():
 def test_tekst_bez_znacznikow_zostaje_caly():
     czesci = rozbij_znaczniki("Zwykły tekst bez przypisów.", ZRODLA)
     assert czesci == [{"tekst": "Zwykły tekst bez przypisów."}]
+
+
+def _kawalek(tekst, marker=None, **reszta):
+    zrodla = [{"marker": marker, "chunk_id": marker}] if marker else []
+    return {"text": tekst, "verified": True, "sources": zrodla, **reszta}
+
+
+def test_odnosnik_pokazuje_sie_raz_na_odcinek():
+    """Model podaje źródło do każdego kawałka i tak ma zostać - na tym stoi
+    weryfikacja. Ale osiem cyferek na sześć zdań robiło z odpowiedzi pracę
+    naukową zamiast porady."""
+    from app.api.routes import czesci_odpowiedzi
+
+    odpowiedz = {
+        "sentences": [
+            _kawalek("Podlewaj 2-3 razy w tygodniu", 1),
+            _kawalek(" — ", spoiwo=True),
+            _kawalek("częściej w upały.", 1),
+            _kawalek(" Najlepsza jest deszczówka.", 2),
+            _kawalek(" Lej pod krzew.", 2),
+            _kawalek(" Rankiem albo wieczorem.", 3),
+        ]
+    }
+
+    widoczne = [[z["marker"] for z in c["znaczniki"]] for c in czesci_odpowiedzi(odpowiedz)]
+
+    assert widoczne == [[], [], [1], [], [2], [3]]
+
+
+def test_spoiwo_nie_przerywa_odcinka():
+    """Przecinek ani myślnik nie zmieniają tego, skąd pochodzi zdanie."""
+    from app.api.routes import czesci_odpowiedzi
+
+    odpowiedz = {"sentences": [_kawalek("Lej pod krzew", 1), _kawalek(", a ", spoiwo=True), _kawalek("w upały częściej.", 1)]}
+
+    assert [[z["marker"] for z in c["znaczniki"]] for c in czesci_odpowiedzi(odpowiedz)] == [[], [], [1]]
+
+
+def test_ustalenie_przerywa_odcinek():
+    """Wartość rozstrzygnięta przez człowieka to inne źródło informacji niż
+    książka - odnośnik do książki musi zdążyć stanąć przed nią."""
+    from app.api.routes import czesci_odpowiedzi
+
+    odpowiedz = {
+        "sentences": [
+            _kawalek("Pomidory lubią odczyn", 1),
+            _kawalek(" 6,2.", ustalenie="odczyn gleby"),
+            _kawalek(" Gleba ma być przepuszczalna.", 1),
+        ]
+    }
+
+    assert [[z["marker"] for z in c["znaczniki"]] for c in czesci_odpowiedzi(odpowiedz)] == [[1], [], [1]]
+
+
+def test_okno_edycji_dostaje_te_same_odnosniki_co_ekran():
+    """Inaczej po kliknięciu "popraw" tekst wyglądałby inaczej niż przed chwilą."""
+    odpowiedz = {"sentences": [_kawalek("Lej pod krzew", 1), _kawalek(" i nie mocz liści.", 1)]}
+
+    assert tekst_ze_znacznikami(odpowiedz) == "Lej pod krzew i nie mocz liści.[1]"

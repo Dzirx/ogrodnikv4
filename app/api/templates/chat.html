@@ -203,7 +203,7 @@
                 {%- for czesc in czesci_odpowiedzi(w.answer_json) -%}
                   {%- set nr = loop.index0 -%}
                   <span class="zdanie{% if not czesc.verified %} niepotwierdzone{% endif %}">{{ czesc.text }}</span>
-                  {%- for zrodlo in czesc.zrodla -%}
+                  {%- for zrodlo in czesc.znaczniki -%}
                     <a class="znacznik" href="?podglad={{ zrodlo.chunk_id }}&w={{ w.id }}&z={{ nr }}" title="{{ zrodlo.source_title }}, strona {{ zrodlo.page }}">{{ zrodlo.marker }}</a>
                   {%- endfor -%}
                   {#- Wartosc rozstrzygnieta przez czlowieka nie dostaje odnosnika do

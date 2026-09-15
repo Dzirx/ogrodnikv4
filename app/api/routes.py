@@ -169,7 +169,36 @@ def czesci_odpowiedzi(odpowiedz: dict) -> list[dict]:
                 "ustalenie": czesc.get("ustalenie"),
             }
         )
-    return wynik
+    return _bez_powtorzonych_znacznikow(wynik)
+
+
+def _bez_powtorzonych_znacznikow(czesci: list[dict]) -> list[dict]:
+    """Odnośnik pokazujemy raz na odcinek, nie przy każdym kawałku.
+
+    Model podaje źródło do KAŻDEGO kawałka i tak ma zostać - na tym stoi
+    weryfikacja. Ale rysowanie wszystkich cyferek robiło z odpowiedzi pracę
+    naukową: osiem odnośników na sześć zdań, po jednym przy każdym zdaniu.
+
+    Cyferka staje więc tam, gdzie kończy się odcinek oparty na tym samym
+    akapicie - czasem w środku zdania, czasem po dwóch zdaniach. Miejsca nie
+    wymuszamy, bo koniec zdania byłby tylko inną sztywną regułą.
+
+    Kawałki bez źródła (spoiwo) nie przerywają odcinka - "a", " — " czy
+    przecinek nie zmieniają tego, skąd pochodzi zdanie."""
+    for numer, czesc in enumerate(czesci):
+        czesc["znaczniki"] = czesc["zrodla"]
+        if not czesc["zrodla"]:
+            continue
+        nastepny = next(
+            (k for k in czesci[numer + 1 :] if k["zrodla"] or k.get("ustalenie")), None
+        )
+        if nastepny is not None and _te_same(nastepny["zrodla"], czesc["zrodla"]):
+            czesc["znaczniki"] = []
+    return czesci
+
+
+def _te_same(a: list[dict], b: list[dict]) -> bool:
+    return {z["marker"] for z in a} == {z["marker"] for z in b}
 
 
 def tekst_ze_znacznikami(odpowiedz: dict) -> str:
@@ -182,7 +211,9 @@ def tekst_ze_znacznikami(odpowiedz: dict) -> str:
     kawalki = []
     for czesc in czesci_odpowiedzi(odpowiedz):
         kawalki.append(czesc["text"])
-        kawalki.extend(f"[{zrodlo['marker']}]" for zrodlo in czesc["zrodla"])
+        # Te same odnośniki, które widać w odpowiedzi - inaczej po otwarciu
+        # okna edycji tekst wyglądałby inaczej niż przed chwilą na ekranie.
+        kawalki.extend(f"[{zrodlo['marker']}]" for zrodlo in czesc["znaczniki"])
     return "".join(kawalki)
 
 
