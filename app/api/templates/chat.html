@@ -256,6 +256,13 @@
               </p>
               {% endif %}
               {% set niepewne = w.answer_json.sentences | rejectattr("verified") | list %}
+              {# Kontrola usuwa zdania, ktore twierdza cos spoza ksiazek. Usuniecie
+                 ma byc widoczne - inaczej tekst po cichu traci fragment i nikt
+                 sie nie dowie, ze model probowal cos dopisac. #}
+              {% if w.answer_json.usuniete %}
+              <p><small class="brak-w-zrodle">Usunięte jako niepotwierdzone:
+                {{ w.answer_json.usuniete | join(" · ") }}</small></p>
+              {% endif %}
               {% if niepewne %}
               <p><small class="brak-w-zrodle">Nie znalazłem w źródle: {{ niepewne | map(attribute="text") | join(" · ") }}</small></p>
               {% endif %}

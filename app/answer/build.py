@@ -24,6 +24,7 @@ from openai import OpenAI
 
 from app.answer.cytaty import normalize, quote_is_in_chunk
 from app.answer.konflikty import ustalenia_dla, znajdz_konflikty
+from app.answer.kontrola import do_usuniecia, sprawdz_zdania
 from app.answer.plan import zaplanuj
 from app.config import settings
 from app.db.base import SessionLocal
@@ -135,12 +136,13 @@ Dobrze: "Lej pod korzeń, nigdy na liście. Najlepsza jest deszczówka albo woda
 Dobrze: "Na zbiór letni wysiewaj od kwietnia. Na jesienny miesiąc-dwa później."
 
 PLAN
-Czasem dostajesz plan — listę zagadnień, które tekst ma obejmować, w kolejności. Trzymaj
-się go: jedno zagadnienie to jeden akapit. Zagadnienie, na które nie masz faktów, POMIŃ
-w całości — nie pisz o nim z własnej głowy ani nie zapowiadaj, że książki tego nie mówią.
+Czasem dostajesz plan — listę zagadnień, które tekst ma obejmować, w kolejności. To jest
+zakres i porządek, nie szablon akapitów. Zagadnienie o dwóch faktach zajmie dwa zdania,
+inne rozciągnie się na dwa akapity — tak, jak wychodzi z treści.
 
-Gdy planu nie ma, sam decydujesz, ile tekstu potrzeba. Tyle, ile mówią fakty — ani zdania
-więcej.
+Ile akapitów, decydujesz sam. Nowy akapit zaczynasz tam, gdzie zmienia się rzecz, o której
+mówisz — ale akapit to kilka zdań o jednej rzeczy. Jedno zdanie to nie akapit. Jeśli masz
+trzy zdania o podlewaniu, stoją w jednym akapicie, a nie w trzech.
 
 JAK ODDAJESZ ODPOWIEDŹ
 Oddajesz tekst pocięty na kawałki, ale to nadal jeden ciąg — sklejone kawałki muszą się
@@ -321,10 +323,7 @@ FORMY = {
         "na_ksiazke": 6,
         "faktow": 12,
         "planuje": False,
-        "jak": (
-            "Odpowiedz na pytanie. Jeden akapit — \"nowy_akapit\" wszędzie fałsz."
-            " Bez wstępu, bez podsumowania."
-        ),
+        "jak": "Odpowiedz na pytanie. Bez rozbiegu i bez podsumowania na końcu.",
     },
     "rozwiniecie": {
         "na_ksiazke": 8,
@@ -337,7 +336,8 @@ FORMY = {
         "faktow": 40,
         "planuje": True,
         "jak": (
-            "To ma być materiał do czytania, nie odpowiedź na pytanie. Nie zapowiadaj"
+            "To ma być materiał do czytania, nie odpowiedź na pytanie. Prowadź czytelnika"
+            " przez temat: od przygotowania, przez prowadzenie, po kłopoty. Nie zapowiadaj"
             " na początku i nie streszczaj na końcu, po prostu pisz."
         ),
     },
@@ -346,10 +346,9 @@ FORMY = {
         "faktow": 14,
         "planuje": False,
         "jak": (
-            "To ma być wpis na Facebooka: jeden akapit, bez podziału —"
-            " \"nowy_akapit\" wszędzie fałsz. Krótko, tonem z próbek wyżej. Zacznij od"
-            " rzeczy, nie od zapowiedzi. Bez emotek, bez hasztagów, bez wołania"
-            " o komentarze."
+            "To ma być wpis na Facebooka — czyta się go w biegu, na telefonie."
+            " Ton jak w próbkach wyżej. Zacznij od rzeczy, nie od zapowiedzi."
+            " Bez emotek, bez hasztagów, bez wołania o komentarze."
         ),
     },
     "lista": {
@@ -586,14 +585,13 @@ def answer_question(
 
         zagadnienia = zagadnienia_z_pokryciem(zagadnienia, fakty, znalezione_dla)
 
+        do_pisania = przytnij_fakty(fakty, by_id, forma["faktow"])
         raw = _napisz_z_faktow(
-            pytanie,
-            przytnij_fakty(fakty, by_id, forma["faktow"]),
-            ustalenia_dla(db, list(by_id)),
-            forma["jak"],
-            zagadnienia,
+            pytanie, do_pisania, ustalenia_dla(db, list(by_id)), forma["jak"], zagadnienia
         )
+        raw, usuniete = po_kontroli(raw, do_pisania)
         odpowiedz = _verify(raw, by_id, pages, sources)
+        odpowiedz["usuniete"] = usuniete
 
         # Roznice miedzy ksiazkami szukamy PO zlozeniu odpowiedzi. To osobna
         # sprawa niz pisanie i nie ma prawa na nie wplywac - a fakty i tak sa
@@ -744,6 +742,7 @@ def _napisz_z_faktow(
                 "zrodla": [] if uzyte else zrodla,
                 "ustalenie": uzyte[0] if uzyte else None,
                 "nowy_akapit": bool(czesc.get("nowy_akapit")),
+                "fakty_nr": numery,
             }
         )
     return {"czesci": czesci}
@@ -786,6 +785,67 @@ def jest_spoiwem(tekst: str) -> bool:
 BEZ_SPACJI = ',.;:!?…)»"\''
 
 
+_KONIEC_ZDANIA = re.compile(r"[.!?…]")
+
+
+def _na_zdania(czesci: list[dict], fakty: list[dict]) -> list[dict]:
+    """Kawalki pogrupowane w zdania - kontrola ocenia zdania, nie kawalki.
+
+    Kawalek to czesc zdania, wiec ocena "czy to twierdzenie wynika z faktow"
+    na kawalku bylaby oceną urwanego fragmentu."""
+    zdania: list[dict] = []
+    biezace: dict | None = None
+    for numer, czesc in enumerate(czesci):
+        if biezace is None:
+            biezace = {"nr": len(zdania), "tekst": "", "fakty": [], "indeksy": []}
+        biezace["tekst"] += czesc.get("text", "")
+        biezace["indeksy"].append(numer)
+        for nr_faktu in czesc.get("fakty_nr", []):
+            tresc = fakty[nr_faktu].get("tresc", "") if 0 <= nr_faktu < len(fakty) else ""
+            if tresc and tresc not in biezace["fakty"]:
+                biezace["fakty"].append(tresc)
+        if _KONIEC_ZDANIA.search(czesc.get("text", "")):
+            zdania.append(biezace)
+            biezace = None
+    if biezace is not None and biezace["tekst"].strip():
+        zdania.append(biezace)
+    return zdania
+
+
+def po_kontroli(raw: dict, fakty: list[dict]) -> tuple[dict, list[str]]:
+    """Usuwa zdania, ktore twierdza cos spoza faktow. Zwraca tekst i to, co wypadlo.
+
+    Zdanie, ktore niczego nie twierdzi, zostaje bez przypisu - to jest cala
+    zmiana: dzieki niej tekst moze miec przejscia i wprowadzenia, zamiast byc
+    lista faktow.
+
+    To ocena modelu i moze sie mylic, wiec nie zastepuje sprawdzenia cytatu,
+    tylko dokłada sie nad nim."""
+    czesci = raw.get("czesci", [])
+    zdania = _na_zdania(czesci, fakty)
+    oceny = sprawdz_zdania([{"nr": z["nr"], "tekst": z["tekst"], "fakty": z["fakty"]} for z in zdania])
+    if not oceny:
+        return raw, []
+
+    wyrzucone: set[int] = set()
+    powody: list[str] = []
+    for zdanie in zdania:
+        ocena = oceny.get(zdanie["nr"])
+        if ocena is None:
+            continue
+        if do_usuniecia(ocena):
+            wyrzucone.update(zdanie["indeksy"])
+            powody.append(zdanie["tekst"].strip())
+        elif not ocena.get("twierdzi"):
+            # Zdanie przejsciowe - nie potrzebuje przypisu i nie ma byc
+            # oznaczone jako niepotwierdzone.
+            for indeks in zdanie["indeksy"]:
+                czesci[indeks]["przejscie"] = True
+
+    raw["czesci"] = [c for numer, c in enumerate(czesci) if numer not in wyrzucone]
+    return raw, powody
+
+
 def _verify(raw: dict, by_id: dict, pages: dict, sources: dict) -> dict:
     """Sprawdza kazdy cytat i sklada odpowiedz do pokazania."""
     czesci = []
@@ -817,7 +877,7 @@ def _verify(raw: dict, by_id: dict, pages: dict, sources: dict) -> dict:
 
         tekst = _brakujaca_spacja(item.get("text", ""))
         ustalenie = item.get("ustalenie")
-        spoiwo = not zrodla and not ustalenie and jest_spoiwem(tekst)
+        spoiwo = not zrodla and not ustalenie and (item.get("przejscie") or jest_spoiwem(tekst))
         czesci.append(
             {
                 "text": tekst,

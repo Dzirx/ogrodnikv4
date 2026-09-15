@@ -174,3 +174,47 @@ def test_sklejone_zdania_w_kawalku_dostaja_spacje():
         "po cyfrze nie ruszamy - to może być liczba dziesiętna albo numer"
     )
     assert _brakujaca_spacja("3.5 kg") == "3.5 kg"
+
+
+def test_zdanie_przejsciowe_zostaje_bez_przypisu():
+    """Sedno zmiany: tekst ma móc mieć przejścia i wprowadzenia. Dotąd kawałek
+    bez faktu przechodził tylko jako przecinek albo spójnik, więc model pisał
+    fakt za faktem."""
+    from app.answer.kontrola import do_usuniecia
+
+    przejscie = {"twierdzi": False, "wynika": True, "warunek": True, "co_nie_pasuje": ""}
+
+    assert not do_usuniecia(przejscie)
+
+
+def test_twierdzenie_bez_pokrycia_wypada():
+    from app.answer.kontrola import do_usuniecia
+
+    assert do_usuniecia({"twierdzi": True, "wynika": False, "warunek": True, "co_nie_pasuje": "dopisana przyczyna"})
+
+
+def test_zgubiony_warunek_wypada():
+    """Fakt "pod osłonami podlewać częściej" zamieniony na "podlewaj częściej"
+    wprowadza w błąd, choć każde słowo pochodzi ze źródła."""
+    from app.answer.kontrola import do_usuniecia
+
+    assert do_usuniecia({"twierdzi": True, "wynika": True, "warunek": False, "co_nie_pasuje": "zgubione osłony"})
+
+
+def test_zdania_skladane_z_kawalkow_po_znaku_konca():
+    from app.answer.build import _na_zdania
+
+    czesci = [
+        {"text": "Podlewaj 2-3 razy w tygodniu", "fakty_nr": [0]},
+        {"text": " — ", "fakty_nr": []},
+        {"text": "w upały częściej.", "fakty_nr": [1]},
+        {"text": " Przejdźmy do nawożenia.", "fakty_nr": []},
+    ]
+    fakty = [{"tresc": "podlewać 2-3 razy w tygodniu"}, {"tresc": "w upały częściej"}]
+
+    zdania = _na_zdania(czesci, fakty)
+
+    assert len(zdania) == 2
+    assert zdania[0]["indeksy"] == [0, 1, 2]
+    assert zdania[0]["fakty"] == ["podlewać 2-3 razy w tygodniu", "w upały częściej"]
+    assert zdania[1]["fakty"] == []
