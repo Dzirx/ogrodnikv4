@@ -24,7 +24,7 @@ from openai import OpenAI
 
 from app.answer.cytaty import normalize, quote_is_in_chunk
 from app.answer.konflikty import ustalenia_dla, znajdz_konflikty
-from app.answer.kontrola import do_usuniecia, sprawdz_zdania
+from app.answer.kontrola import do_usuniecia, sprawdz_realizacje, sprawdz_zdania
 from app.answer.plan import zaplanuj
 from app.config import settings
 from app.db.base import SessionLocal
@@ -140,9 +140,8 @@ Czasem dostajesz plan — listę zagadnień, które tekst ma obejmować, w kolej
 zakres i porządek, nie szablon akapitów. Zagadnienie o dwóch faktach zajmie dwa zdania,
 inne rozciągnie się na dwa akapity — tak, jak wychodzi z treści.
 
-Ile akapitów, decydujesz sam. Nowy akapit zaczynasz tam, gdzie zmienia się rzecz, o której
-mówisz — ale akapit to kilka zdań o jednej rzeczy. Jedno zdanie to nie akapit. Jeśli masz
-trzy zdania o podlewaniu, stoją w jednym akapicie, a nie w trzech.
+Ile akapitów, decydujesz sam. Każdy akapit skupia się na jednej myśli, a długość dopasuj
+do tekstu — trzy zdania o podlewaniu stoją razem, nie w trzech osobnych akapitach.
 
 JAK ODDAJESZ ODPOWIEDŹ
 Oddajesz tekst pocięty na kawałki, ale to nadal jeden ciąg — sklejone kawałki muszą się
@@ -592,6 +591,9 @@ def answer_question(
         raw, usuniete = po_kontroli(raw, do_pisania)
         odpowiedz = _verify(raw, by_id, pages, sources)
         odpowiedz["usuniete"] = usuniete
+        # Druga polowa kontroli: czy powstal tekst, o ktory poproszono. Zagadnienie
+        # moglo wypasc przy pisaniu albo razem z usunietym zdaniem.
+        odpowiedz["pominiete"] = sprawdz_realizacje(sklej(odpowiedz.get("sentences", [])), zagadnienia)
 
         # Roznice miedzy ksiazkami szukamy PO zlozeniu odpowiedzi. To osobna
         # sprawa niz pisanie i nie ma prawa na nie wplywac - a fakty i tak sa
@@ -797,7 +799,13 @@ def _na_zdania(czesci: list[dict], fakty: list[dict]) -> list[dict]:
     biezace: dict | None = None
     for numer, czesc in enumerate(czesci):
         if biezace is None:
-            biezace = {"nr": len(zdania), "tekst": "", "fakty": [], "indeksy": []}
+            biezace = {
+                "nr": len(zdania),
+                "tekst": "",
+                "fakty": [],
+                "indeksy": [],
+                "nowy_akapit": bool(czesc.get("nowy_akapit")),
+            }
         biezace["tekst"] += czesc.get("text", "")
         biezace["indeksy"].append(numer)
         for nr_faktu in czesc.get("fakty_nr", []):
@@ -812,6 +820,20 @@ def _na_zdania(czesci: list[dict], fakty: list[dict]) -> list[dict]:
     return zdania
 
 
+def _fakty_akapitu(zdania: list[dict], numer: int) -> list[str]:
+    """Fakty wszystkich zdan tego akapitu - warunek moze stac w ktorymkolwiek."""
+    poczatek = numer
+    while poczatek > 0 and not zdania[poczatek]["nowy_akapit"]:
+        poczatek -= 1
+    koniec = numer + 1
+    while koniec < len(zdania) and not zdania[koniec]["nowy_akapit"]:
+        koniec += 1
+    wszystkie: list[str] = []
+    for zdanie in zdania[poczatek:koniec]:
+        wszystkie.extend(f for f in zdanie["fakty"] if f not in wszystkie)
+    return wszystkie
+
+
 def po_kontroli(raw: dict, fakty: list[dict]) -> tuple[dict, list[str]]:
     """Usuwa zdania, ktore twierdza cos spoza faktow. Zwraca tekst i to, co wypadlo.
 
@@ -823,7 +845,21 @@ def po_kontroli(raw: dict, fakty: list[dict]) -> tuple[dict, list[str]]:
     tylko dokłada sie nad nim."""
     czesci = raw.get("czesci", [])
     zdania = _na_zdania(czesci, fakty)
-    oceny = sprawdz_zdania([{"nr": z["nr"], "tekst": z["tekst"], "fakty": z["fakty"]} for z in zdania])
+    # Zdanie oceniane samotnie wyglada na pozbawione warunku, gdy warunek stoi
+    # zdanie wyzej: "W takich warunkach podlewaj rzadziej". Dlatego kontrola
+    # dostaje zdanie poprzedzajace i fakty calego akapitu.
+    oceny = sprawdz_zdania(
+        [
+            {
+                "nr": z["nr"],
+                "tekst": z["tekst"],
+                "fakty": z["fakty"],
+                "poprzednie": zdania[numer - 1]["tekst"] if numer else "",
+                "fakty_akapitu": _fakty_akapitu(zdania, numer),
+            }
+            for numer, z in enumerate(zdania)
+        ]
+    )
     if not oceny:
         return raw, []
 
