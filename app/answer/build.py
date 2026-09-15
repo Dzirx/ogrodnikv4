@@ -247,43 +247,55 @@ def przepisz_pytanie(historia: list[tuple[str, str]], pytanie: str) -> str:
         return pytanie
 
 
+def zbierz_fakty_do_pytania(
+    db, pytanie: str, source_ids: list[int] | None = None
+) -> tuple[list[dict], dict, dict, dict]:
+    """Wyszukanie akapitow i wypisanie z nich faktow.
+
+    Wspolny poczatek dwoch drog: odpowiadania na pytanie redaktora i przegladu
+    nowej ksiazki. Przeglad musi isc dokladnie ta sama sciezka, bo inaczej
+    roznice znalezione automatycznie rzadzilyby sie innymi regulami niz te
+    znalezione przy rozmowie."""
+    chunk_ids = search(pytanie, source_ids=source_ids)
+    if not chunk_ids:
+        return [], {}, {}, {}
+
+    chunks = db.query(Chunk).filter(Chunk.id.in_(chunk_ids)).all()
+    by_id = {c.id: c for c in chunks}
+    pages = {p.id: p for p in db.query(Page).filter(Page.id.in_([c.page_id for c in chunks])).all()}
+    sources = {s.id: s for s in db.query(Source).filter(Source.id.in_({c.source_id for c in chunks})).all()}
+
+    poprzednie = _poprzednie_akapity(db, [by_id[cid] for cid in chunk_ids if cid in by_id])
+    context = [
+        {
+            "chunk_id": chunk.id,
+            "source": sources[chunk.source_id].title,
+            "page": pages[chunk.page_id].number,
+            # Poczatek poprzedniego akapitu - bez tego model nie wie, czego
+            # dotyczy fragment. Akapit "Niedobor wapnia... Jak zapobiegac:
+            # Podnies pH gleby do okolo 6,0" wyglada jak porada o odczynie
+            # gleby, a jest zaleceniem przy suchej zgniliznie wierzcholkowej
+            # - nagłowek rozdzialu siedzi w akapicie obok.
+            "poprzedni_fragment": poprzednie.get(chunk.id),
+            "text": chunk.text,
+        }
+        # Kolejnosc z wyszukiwania - najtrafniejsze najpierw.
+        for chunk in (by_id[cid] for cid in chunk_ids if cid in by_id)
+    ]
+    return _zbierz_fakty(pytanie, context), by_id, pages, sources
+
+
 def answer_question(
     question: str,
     source_ids: list[int] | None = None,
     historia: list[tuple[str, str]] | None = None,
 ) -> dict:
-    """Zwraca odpowiedz gotowa do pokazania: zdania z cytatami i lista zrodel."""
+    """Zwraca odpowiedz gotowa do pokazania: kawalki tekstu z cytatami i zrodla."""
     do_wyszukania = przepisz_pytanie(historia or [], question)
-    chunk_ids = search(do_wyszukania, source_ids=source_ids)
-    if not chunk_ids:
-        return _no_data()
 
     db = SessionLocal()
     try:
-        chunks = db.query(Chunk).filter(Chunk.id.in_(chunk_ids)).all()
-        by_id = {c.id: c for c in chunks}
-        pages = {p.id: p for p in db.query(Page).filter(Page.id.in_([c.page_id for c in chunks])).all()}
-        sources = {s.id: s for s in db.query(Source).filter(Source.id.in_({c.source_id for c in chunks})).all()}
-
-        poprzednie = _poprzednie_akapity(db, [by_id[cid] for cid in chunk_ids if cid in by_id])
-        context = [
-            {
-                "chunk_id": chunk.id,
-                "source": sources[chunk.source_id].title,
-                "page": pages[chunk.page_id].number,
-                # Poczatek poprzedniego akapitu - bez tego model nie wie, czego
-                # dotyczy fragment. Akapit "Niedobor wapnia... Jak zapobiegac:
-                # Podnies pH gleby do okolo 6,0" wyglada jak porada o odczynie
-                # gleby, a jest zaleceniem przy suchej zgniliznie wierzcholkowej
-                # - nagłowek rozdzialu siedzi w akapicie obok.
-                "poprzedni_fragment": poprzednie.get(chunk.id),
-                "text": chunk.text,
-            }
-            # Kolejnosc z wyszukiwania - najtrafniejsze najpierw.
-            for chunk in (by_id[cid] for cid in chunk_ids if cid in by_id)
-        ]
-
-        fakty = _zbierz_fakty(do_wyszukania, context)
+        fakty, by_id, pages, sources = zbierz_fakty_do_pytania(db, do_wyszukania, source_ids)
         if not fakty:
             return _no_data()
 
@@ -291,7 +303,7 @@ def answer_question(
         # zebrane dla jednego pytania, wiec z definicji dotycza tej samej rzeczy.
         znajdz_konflikty(db, do_wyszukania, fakty, by_id)
 
-        raw = _napisz_z_faktow(do_wyszukania, fakty, ustalenia_dla(db, chunk_ids))
+        raw = _napisz_z_faktow(do_wyszukania, fakty, ustalenia_dla(db, list(by_id)))
         return _verify(raw, by_id, pages, sources)
     finally:
         db.close()

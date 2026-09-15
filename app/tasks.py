@@ -13,6 +13,19 @@ def przetworz_zrodlo(source_id: int) -> None:
     from app.ingest.pipeline import process_source
 
     process_source(source_id)
+    # Przeglad osobnym zadaniem, nie w tym samym: podzial ksiazki ma sie
+    # zakonczyc i zrodlo ma byc "gotowe" nawet wtedy, gdy przeglad polegnie.
+    queue.enqueue(przejrzyj_nowe_zrodlo, source_id, job_timeout=1800)
+
+
+def przejrzyj_nowe_zrodlo(source_id: int) -> int:
+    """Program sam pyta nowa ksiazke i zestawia ja z pozostalymi.
+
+    Bez tego redaktor musialby zadawac pytania po to, zeby program zaczal
+    porownywac - czyli wykonywac prace, ktora mial przejac."""
+    from app.answer.przeglad import przejrzyj_zrodlo
+
+    return przejrzyj_zrodlo(source_id)
 
 
 def odpowiedz_na_pytanie(message_id: int) -> None:
