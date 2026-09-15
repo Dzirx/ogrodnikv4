@@ -50,14 +50,36 @@ def _pogrupuj_zrodla(zrodla: list[Source]) -> list[tuple[str | None, list[Source
     return wynik
 
 
+# Ile wątków pokazujemy w pasku po lewej, zanim pojawi się "Pokaż więcej".
+POKAZ_ROZMOW = 20
+
+
+def _historia(db: Session, ile: int, biezaca: Conversation | None = None) -> dict:
+    """Wątki w pasku po lewej - przycięte, nie wszystkie.
+
+    Przy setce pytań pasek rósł bez końca i trzeba było przewijać go do dołu,
+    żeby cokolwiek znaleźć. Najnowsze wątki są tym, czego się szuka."""
+    ile = max(POKAZ_ROZMOW, min(ile, 500))
+    rozmowy = db.query(Conversation).order_by(Conversation.id.desc()).limit(ile).all()
+    # Otwarty wątek musi być widoczny, choćby był starszy niż próg - inaczej
+    # wchodzisz w rozmowę i znika ona z listy, w której właśnie ją kliknąłeś.
+    if biezaca is not None and all(r.id != biezaca.id for r in rozmowy):
+        rozmowy.append(biezaca)
+    return {
+        "rozmowy": rozmowy,
+        "starsze": max(db.query(Conversation).count() - ile, 0),
+        "nastepne": ile + POKAZ_ROZMOW,
+    }
+
+
 @router.get("/", response_class=HTMLResponse)
-def pytania(request: Request, db: Session = Depends(get_db)):
+def pytania(request: Request, historia: int = POKAZ_ROZMOW, db: Session = Depends(get_db)):
     return templates.TemplateResponse(
         "chat.html",
         {
             "request": request,
             "strona": "pytania",
-            "rozmowy": db.query(Conversation).order_by(Conversation.id.desc()).all(),
+            **_historia(db, historia),
             "zrodla": (gotowe := db.query(Source).filter_by(status="ready").order_by(Source.title).all()),
             "pogrupowane": _pogrupuj_zrodla(gotowe),
             "rozmowa": None,
@@ -75,6 +97,7 @@ def rozmowa(
     podglad: int | None = None,
     w: int | None = None,
     z: int | None = None,
+    historia: int = POKAZ_ROZMOW,
     db: Session = Depends(get_db),
 ):
     conversation = db.get(Conversation, rozmowa_id)
@@ -86,7 +109,7 @@ def rozmowa(
         {
             "request": request,
             "strona": "pytania",
-            "rozmowy": db.query(Conversation).order_by(Conversation.id.desc()).all(),
+            **_historia(db, historia, conversation),
             "zrodla": (gotowe := db.query(Source).filter_by(status="ready").order_by(Source.title).all()),
             "pogrupowane": _pogrupuj_zrodla(gotowe),
             "rozmowa": conversation,

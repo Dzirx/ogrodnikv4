@@ -46,6 +46,7 @@
   .kolumna > .naglowek { padding: 0.7rem 1rem; border-bottom: 1px solid var(--ramka); font-weight: 600; font-size: 0.9rem; }
   .kolumna > .tresc { padding: 1rem; }
   .watki { list-style: none; margin: 0; padding: 0; }
+  .starsze-watki a { color: var(--przygaszony); font-size: 0.85rem; }
   .watki li { border-bottom: 1px solid var(--ramka); }
   .watki a { display: block; padding: 0.5rem 1rem; text-decoration: none; color: var(--tekst); font-size: 0.9rem; }
   .watki a:hover { background: var(--tlo); }
@@ -124,6 +125,9 @@
       {% else %}
       <li style="padding: 0.6rem 1rem;"><small class="podpowiedz">Jeszcze nie ma żadnych pytań.</small></li>
       {% endfor %}
+      {% if starsze %}
+      <li class="starsze-watki"><a href="{{ request.url.include_query_params(historia=nastepne) }}">Pokaż więcej ({{ starsze }})</a></li>
+      {% endif %}
     </ul>
   </div>
 
