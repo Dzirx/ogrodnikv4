@@ -27,8 +27,10 @@ def test_sklada_tekst_ze_znacznikami_do_edycji():
             {"text": " — pod krzew, nie na liście.", "sources": [{"marker": 2}]},
         ]
     }
-    # Pierwszy odcinek ma liczbę, drugi nie - stąd jeden odnośnik.
-    assert tekst_ze_znacznikami(odpowiedz) == "Podlewaj 2-3 razy w tygodniu[1] — pod krzew, nie na liście."
+    # Pierwszy odcinek ma liczbę; drugi kończy akapit, więc też dostaje odnośnik -
+    # w dłuższym tekście jedna cyferka na sześć akapitów wyglądała na tekst
+    # wzięty z powietrza.
+    assert tekst_ze_znacznikami(odpowiedz) == "Podlewaj 2-3 razy w tygodniu[1] — pod krzew, nie na liście.[2]"
 
 
 def test_kawalek_moze_miec_kilka_przypisow():
@@ -80,8 +82,8 @@ def test_starsza_rozmowa_z_pojedynczym_zrodlem_nadal_sie_sklada():
             {"text": "Najlepsza jest deszczówka.", "source": {"marker": 1}},
         ]
     }
-    # Drugie zdanie nie niesie liczby, więc zostaje bez cyferki.
-    assert tekst_ze_znacznikami(odpowiedz) == "Lej 2 litry pod krzew.[2] Najlepsza jest deszczówka."
+    # Drugie zdanie nie niesie liczby, ale kończy tekst - odnośnik zostaje.
+    assert tekst_ze_znacznikami(odpowiedz) == "Lej 2 litry pod krzew.[2] Najlepsza jest deszczówka.[1]"
 
 
 def test_rozbija_tekst_na_fragmenty_i_odnosniki():
@@ -131,7 +133,8 @@ def test_odnosnik_pokazuje_sie_raz_na_odcinek():
     widoczne = [[z["marker"] for z in c["znaczniki"]] for c in czesci_odpowiedzi(odpowiedz)]
 
     # Odcinek 1 i 2 niosą liczbę, trzeci nie - stąd dwie cyferki zamiast sześciu.
-    assert widoczne == [[], [], [1], [], [2], []]
+    # Trzeci odcinek nie ma liczby, ale kończy tekst - dostaje odnośnik.
+    assert widoczne == [[], [], [1], [], [2], [3]]
 
 
 def test_spoiwo_nie_przerywa_odcinka():
@@ -171,12 +174,18 @@ def test_odcinek_bez_liczby_zostaje_bez_cyferki():
     w bazie, ale cyferka przy nim niczego nie wnosi - nie ma czego sprawdzać."""
     from app.api.routes import czesci_odpowiedzi
 
-    odpowiedz = {"sentences": [_kawalek("Zrób podstawowe badanie gleby w OSCHR.", 4)]}
+    odpowiedz = {
+        "sentences": [
+            _kawalek("Zrób podstawowe badanie gleby w OSCHR.", 4),
+            _kawalek(" Kompost dodaj w ilości 3 kg na metr.", 5),
+        ]
+    }
 
     czesci = czesci_odpowiedzi(odpowiedz)
 
-    assert czesci[0]["znaczniki"] == []
+    assert czesci[0]["znaczniki"] == [], "odcinek bez liczby w środku akapitu"
     assert czesci[0]["zrodla"], "źródło zostaje w danych, znika tylko z ekranu"
+    assert [z["marker"] for z in czesci[1]["znaczniki"]] == [5], "ma liczbę i kończy akapit"
 
 
 def test_zrodla_pod_odpowiedzia_grupuja_strony_po_ksiazkach():

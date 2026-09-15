@@ -24,7 +24,7 @@ from openai import OpenAI
 
 from app.answer.cytaty import normalize, quote_is_in_chunk
 from app.answer.konflikty import ustalenia_dla, znajdz_konflikty
-from app.answer.kontrola import do_oznaczenia, do_usuniecia, sprawdz_realizacje, sprawdz_zdania, zszyj
+from app.answer.kontrola import do_oznaczenia, do_usuniecia, popraw_lub_skresl, sprawdz_zdania, zszyj
 from app.answer.plan import powiedz_inaczej, zaplanuj
 from app.config import settings
 from app.db.base import SessionLocal
@@ -135,13 +135,13 @@ Dobrze: "Lej pod korzeń, nigdy na liście. Najlepsza jest deszczówka albo woda
          Jeśli planujesz zbiór jesienny, wysiewaj nasiona w czerwcu."
 Dobrze: "Na zbiór letni wysiewaj od kwietnia. Na jesienny miesiąc-dwa później."
 
-PLAN
-Czasem dostajesz plan — listę zagadnień, które tekst ma obejmować, w kolejności. To jest
-zakres i porządek, nie szablon akapitów. Zagadnienie o dwóch faktach zajmie dwa zdania,
-inne rozciągnie się na dwa akapity — tak, jak wychodzi z treści.
+ILE AKAPITÓW
+Decydujesz sam. Każdy akapit skupia się na jednej myśli, a długość dopasuj do tekstu —
+trzy zdania o podlewaniu stoją razem, nie w trzech osobnych akapitach.
 
-Ile akapitów, decydujesz sam. Każdy akapit skupia się na jednej myśli, a długość dopasuj
-do tekstu — trzy zdania o podlewaniu stoją razem, nie w trzech osobnych akapitach.
+Fakty dostajesz pogrupowane tak, jak je znaleziono, ale to nie jest plan tekstu. Nie
+zaczynaj akapitu od nazwania tematu ("Nawadnianie pomidorów wymaga…", "Ochrona przed
+chorobami wymaga…"). Zacznij od rzeczy: "Lej pod krzew, nie na liście".
 
 JAK ODDAJESZ ODPOWIEDŹ
 Oddajesz tekst pocięty na kawałki, ale to nadal jeden ciąg — sklejone kawałki muszą się
@@ -535,9 +535,12 @@ def zbierz_fakty_do_pytania(
 RAZEM_KSIAZEK = 6
 
 
-# Ile faktow musi stac za zagadnieniem, zeby warto je bylo opisac. Jeden fakt
-# to zwykle zdanie wyrwane z innego tematu.
-MIN_FAKTOW_NA_ZAGADNIENIE = 2
+# Ile faktow musi stac za zagadnieniem, zeby uznac je za pokryte. Prog sluzy
+# juz tylko decyzji "doszukiwac czy nie" - model piszacy planu nie widzi, wiec
+# fakty chudego tematu i tak trafiaja do wspolnej puli. Dwa fakty okazaly sie
+# za malo: powstawal z nich akapit w rodzaju "Nawadnianie wymaga unikania
+# nierownomiernego podlewania", czyli jedno chude zdanie udajace rozdzial.
+MIN_FAKTOW_NA_ZAGADNIENIE = 4
 
 # Ile zagadnien warto doszukiwac. Kazde to osobne wyszukiwanie i ponowne
 # czytanie ksiazek - przy siedmiu brakach odpowiedz rosla do kilku minut.
@@ -663,15 +666,14 @@ def answer_question(
                 f" Poproszono o około {zrozumienie['ile_slow']} słów — pisz w tę stronę,"
                 " ale ani jednego zdania ponad to, co mówią fakty."
             )
-        raw = _napisz_z_faktow(
-            pytanie, do_pisania, ustalenia_dla(db, list(by_id)), jak, zagadnienia
-        )
+        # Plan sluzy WYLACZNIE wyszukiwaniu. Model piszacy go nie widzi -
+        # dostajac liste tematow, odhaczal je po kolei i kazdy akapit zaczynal
+        # sie od nazwy zagadnienia: "Nawadnianie... wymaga", "Ochrona...
+        # wymaga". Tekst wygladal jak wypelniony formularz.
+        raw = _napisz_z_faktow(pytanie, do_pisania, ustalenia_dla(db, list(by_id)), jak)
         raw, usuniete = po_kontroli(raw, do_pisania)
         odpowiedz = _verify(raw, by_id, pages, sources)
         odpowiedz["usuniete"] = usuniete
-        # Druga polowa kontroli: czy powstal tekst, o ktory poproszono. Zagadnienie
-        # moglo wypasc przy pisaniu albo razem z usunietym zdaniem.
-        odpowiedz["pominiete"] = sprawdz_realizacje(sklej(odpowiedz.get("sentences", [])), zagadnienia)
 
         # Roznice miedzy ksiazkami szukamy PO zlozeniu odpowiedzi. To osobna
         # sprawa niz pisanie i nie ma prawa na nie wplywac - a fakty i tak sa
@@ -759,7 +761,6 @@ def _napisz_z_faktow(
     fakty: list[dict],
     ustalenia: list[dict] | None = None,
     jak: str = "",
-    zagadnienia: list[str] | None = None,
 ) -> dict:
     """Krok drugi: odpowiedz ulozona z faktow.
 
@@ -777,12 +778,7 @@ def _napisz_z_faktow(
             {
                 "role": "user",
                 "content": json.dumps(
-                    {
-                        "pytanie": question,
-                        "fakty": do_napisania,
-                        "ustalenia": ustalenia or [],
-                        "plan": zagadnienia or [],
-                    },
+                    {"pytanie": question, "fakty": do_napisania, "ustalenia": ustalenia or []},
                     ensure_ascii=False,
                 ),
             },
@@ -941,6 +937,15 @@ def po_kontroli(raw: dict, fakty: list[dict]) -> tuple[dict, list[str]]:
     if not oceny:
         return raw, []
 
+    # Zdanie bez pokrycia dostaje najpierw szanse na skrocenie do tego, co
+    # naprawde stoi w faktach. Dopiero gdy nic sensownego nie zostaje, wypada.
+    do_poprawy = [
+        {"nr": z["nr"], "tekst": z["tekst"].strip(), "fakty": z["fakty"]}
+        for z in zdania
+        if oceny.get(z["nr"]) and do_usuniecia(oceny[z["nr"]])
+    ]
+    poprawione = popraw_lub_skresl(do_poprawy) if do_poprawy else {}
+
     wyrzucone: set[int] = set()
     powody: list[str] = []
     for zdanie in zdania:
@@ -948,6 +953,19 @@ def po_kontroli(raw: dict, fakty: list[dict]) -> tuple[dict, list[str]]:
         if ocena is None:
             continue
         if do_usuniecia(ocena):
+            nowy = poprawione.get(zdanie["nr"], "")
+            if nowy:
+                # Skrocone zdanie wchodzi w pierwszy kawalek, reszta znika -
+                # a zrodla calego zdania zbieramy w tym kawalku, zeby przypis
+                # nie przepadl razem z reszta.
+                pierwszy = zdanie["indeksy"][0]
+                czesci[pierwszy]["text"] = (" " if zdanie["tekst"][:1].isspace() else "") + nowy
+                for indeks in zdanie["indeksy"][1:]:
+                    for zrodlo in czesci[indeks].get("zrodla", []):
+                        if zrodlo not in czesci[pierwszy].setdefault("zrodla", []):
+                            czesci[pierwszy]["zrodla"].append(zrodlo)
+                    wyrzucone.add(indeks)
+                continue
             wyrzucone.update(zdanie["indeksy"])
             powody.append(zdanie["tekst"].strip())
         elif do_oznaczenia(ocena):

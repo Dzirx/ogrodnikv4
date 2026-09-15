@@ -170,6 +170,74 @@ def sprawdz_realizacje(tekst: str, zagadnienia: list[str]) -> list[str]:
     return [z for z in pominiete if z in zagadnienia]
 
 
+POPRAW_PROMPT = """Dostajesz zdania, które twierdzą coś, czego nie ma w podanych przy nich
+faktach. Przy każdym stoją te fakty.
+
+Dla każdego zdania zrób jedno z dwóch:
+- skróć je tak, żeby mówiło WYŁĄCZNIE to, co stoi w faktach,
+- albo oddaj pusty tekst, jeśli po skróceniu nic sensownego nie zostaje.
+
+WOLNO CI WYŁĄCZNIE SKRACAĆ. Każde słowo, które zostawisz, musi stać w oryginalnym zdaniu,
+w tej samej kolejności. Nie wolno dopisać ani jednego słowa — nawet spójnika. Poprawka,
+która cokolwiek dodaje, zostanie odrzucona przez program i zdanie wypadnie w całości.
+
+Przykład: "Wybór odmian jest kluczowy, ponieważ większość pomidorów pochodzi z upraw pod
+osłonami" przy fakcie o pochodzeniu pomidorów skraca się do "większość pomidorów pochodzi
+z upraw pod osłonami"."""
+
+_SCHEMA_POPRAW = {
+    "type": "object",
+    "properties": {
+        "zdania": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {"nr": {"type": "integer"}, "tekst": {"type": "string"}},
+                "required": ["nr", "tekst"],
+                "additionalProperties": False,
+            },
+        }
+    },
+    "required": ["zdania"],
+    "additionalProperties": False,
+}
+
+
+def popraw_lub_skresl(zdania: list[dict]) -> dict[int, str]:
+    """Zdanie bez pokrycia dostaje jedna szanse: skrocic albo wypasc.
+
+    Wczesniej takie zdanie bylo po prostu usuwane, a program meldowal pod
+    tekstem, ze cos wypadlo. Usuwal wiec to, co dalo sie uratowac skreśleniem
+    dopisanego wniosku - a dziura po nim zostawala.
+
+    Poprawka moze tylko skracac, wiec nie wprowadzi nowej tresci."""
+    if not zdania:
+        return {}
+    try:
+        odpowiedz = _openai.chat.completions.create(
+            model=settings.analysis_model,
+            temperature=0,
+            messages=[
+                {"role": "system", "content": POPRAW_PROMPT},
+                {"role": "user", "content": json.dumps({"zdania": zdania}, ensure_ascii=False)},
+            ],
+            response_format={"type": "json_schema", "json_schema": {"name": "poprawki", "schema": _SCHEMA_POPRAW, "strict": True}},
+        )
+        poprawki = json.loads(odpowiedz.choices[0].message.content).get("zdania", [])
+    except Exception:
+        return {}
+
+    oryginaly = {z["nr"]: z["tekst"] for z in zdania}
+    wynik: dict[int, str] = {}
+    for poprawka in poprawki:
+        numer = poprawka.get("nr")
+        if numer not in oryginaly:
+            continue
+        nowy = (poprawka.get("tekst") or "").strip()
+        wynik[numer] = nowy if (not nowy or tylko_skrocone(oryginaly[numer], nowy)) else ""
+    return wynik
+
+
 SZWY_PROMPT = """Z tekstu usunięto zdania, które nie miały pokrycia w książkach. Zostały
 po nich szwy: spójnik odwołujący się do czegoś, czego już nie ma ("Dlatego…", "Z tego
 powodu…"), podsumowanie zdania, które wypadło, albo zdanie zaczynające się od "Te dwa

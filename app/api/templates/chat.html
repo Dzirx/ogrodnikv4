@@ -256,20 +256,14 @@
               </p>
               {% endif %}
               {% set niepewne = w.answer_json.sentences | rejectattr("verified") | list %}
-              {# Kontrola usuwa zdania, ktore twierdza cos spoza ksiazek. Usuniecie
-                 ma byc widoczne - inaczej tekst po cichu traci fragment i nikt
-                 sie nie dowie, ze model probowal cos dopisac. #}
-              {% if w.answer_json.usuniete %}
-              <p><small class="brak-w-zrodle">Usunięte — nie znaleziono potwierdzenia
-                w zebranym materiale: {{ w.answer_json.usuniete | join(" · ") }}</small></p>
+              {# Jedna linijka zamiast trzech. Redaktor ma dostac tekst, a nie
+                 protokol z jego powstawania - a kawalki bez pokrycia sa i tak
+                 widoczne w samym tekscie. #}
+              {% if w.answer_json.usuniete and not w.edited_text %}
+              <p><small class="brak-w-zrodle">Skreślone jako niepotwierdzone w zebranym
+                materiale: {{ w.answer_json.usuniete | join(" · ") }}</small></p>
               {% endif %}
-              {% if w.answer_json.pominiete %}
-              <p><small class="podpowiedz">Zaplanowane, ale nieomówione:
-                {{ w.answer_json.pominiete | join(" · ") }}</small></p>
-              {% endif %}
-              {% if niepewne %}
-              <p><small class="brak-w-zrodle">Nie znalazłem w źródle: {{ niepewne | map(attribute="text") | join(" · ") }}</small></p>
-              {% endif %}
+
               <p class="narzedzia-odpowiedzi">
                 <button type="button" class="ikona" data-kopiuj="odp-{{ w.id }}" title="Kopiuj odpowiedź">⧉ kopiuj</button>
                 <button type="button" class="ikona" data-edytuj="edycja-{{ w.id }}" title="Popraw tekst">✎ popraw</button>

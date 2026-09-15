@@ -236,12 +236,23 @@ def _bez_powtorzonych_znacznikow(czesci: list[dict]) -> list[dict]:
         if nastepny is not None and _te_same(nastepny["zrodla"], czesc["zrodla"]):
             czesc["znaczniki"] = []
             continue
-        # Odcinek bez ani jednej liczby zostaje bez cyferki. Źródło jest
-        # zapisane, podgląd działa, tylko nie rysujemy go w tekście - inaczej
-        # z odpowiedzi robi się praca naukowa zamiast porady.
-        if not _TWARDA_WARTOSC.search(_odcinek(czesci, numer)):
+        # Odcinek bez ani jednej liczby zostaje bez cyferki - inaczej z krótkiej
+        # odpowiedzi robi się praca naukowa. Ale na końcu akapitu odnośnik stoi
+        # zawsze: w dłuższym tekście jedna cyferka na sześć akapitów sprawiała,
+        # że całość wyglądała na wziętą z powietrza.
+        if not _TWARDA_WARTOSC.search(_odcinek(czesci, numer)) and not _koniec_akapitu(czesci, numer):
             czesc["znaczniki"] = []
     return czesci
+
+
+def _koniec_akapitu(czesci: list[dict], numer: int) -> bool:
+    """Czy to ostatni kawałek ze źródłem w tym akapicie."""
+    for dalszy in czesci[numer + 1 :]:
+        if dalszy.get("nowy_akapit"):
+            return True
+        if dalszy["zrodla"]:
+            return False
+    return True
 
 
 def _odcinek(czesci: list[dict], koniec: int) -> str:

@@ -80,14 +80,14 @@ def test_zawezenie_do_jednej_ksiazki_nie_wpuszcza_innych():
 
 
 def test_zagadnienie_bez_pokrycia_wypada_z_planu():
-    """Plan powstaje z wiedzy modelu, więc planuje też rozdziały, których książki
-    nie mają. Artykuł o tunelach dostawał przez to akapity w rodzaju "wybór odmian
-    nie został omówiony w dostępnych faktach"."""
+    """Próg decyduje, czy zagadnienie trzeba doszukać. Dwa fakty okazały się za
+    mało: powstawał z nich akapit w rodzaju "Nawadnianie wymaga unikania
+    nierównomiernego podlewania" - jedno chude zdanie udające rozdział."""
     from app.answer.build import zagadnienia_z_pokryciem
 
-    fakty = [{"chunk_id": 1}, {"chunk_id": 2}, {"chunk_id": 9}]
-    znalezione = {"nawadnianie": {1, 2}, "wybór odmian": {7, 8}, "zbiór": {9}}
+    fakty = [{"chunk_id": n} for n in (1, 2, 3, 4, 9)]
+    znalezione = {"nawadnianie": {1, 2, 3, 4}, "wybór odmian": {7, 8}, "zbiór": {9}}
 
     wynik = zagadnienia_z_pokryciem(["nawadnianie", "wybór odmian", "zbiór"], fakty, znalezione)
 
-    assert wynik == ["nawadnianie"], "jeden fakt to za mało, żeby pisać o tym akapit"
+    assert wynik == ["nawadnianie"], "jeden fakt to za mało, żeby uznać temat za pokryty"
