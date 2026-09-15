@@ -96,3 +96,14 @@ def test_prog_zrodel_nie_da_sie_zejsc_ponizej_domyslnego():
         assert zrodla(_Zadanie(), ile=1, db=db).context["nastepne"] == POKAZ_ZRODEL * 2
     finally:
         db.close()
+
+
+def test_ksiazka_zaznaczona_dwa_razy_nie_wywraca_pytania():
+    """Książka z dwiema etykietami stoi w wyborze źródeł w dwóch grupach.
+    Zaznaczenie obu wysyłało jej numer dwa razy, baza odrzucała duplikat klucza
+    i całe pytanie kończyło się błędem serwera."""
+    from app.api.routes import bez_powtorzen
+
+    assert bez_powtorzen([1, 2, 2]) == [1, 2]
+    assert bez_powtorzen([2, 1, 2, 1]) == [2, 1], "kolejność zaznaczenia zostaje"
+    assert bez_powtorzen([]) == []

@@ -40,6 +40,15 @@ def _wspolne(db: Session) -> dict:
     return {"liczba_konfliktow": db.query(Conflict).filter_by(status="open").count()}
 
 
+def bez_powtorzen(zrodla: list[int]) -> list[int]:
+    """Numery książek bez duplikatów, w kolejności zaznaczenia.
+
+    Książka z dwiema etykietami stoi w wyborze źródeł w dwóch grupach, więc
+    zaznaczenie obu grup wysyła jej numer dwa razy. Baza odrzucała to jako
+    duplikat klucza i całe pytanie kończyło się błędem serwera."""
+    return list(dict.fromkeys(zrodla))
+
+
 def _pogrupuj_zrodla(zrodla: list[Source]) -> list[tuple[str | None, list[Source]]]:
     """Źródła w grupach po etykietach, żeby dało się zaznaczyć temat naraz.
 
@@ -408,7 +417,7 @@ def nowe_pytanie(
     conversation = Conversation(title=tekst[:120])
     db.add(conversation)
     db.flush()
-    for source_id in zrodla:
+    for source_id in bez_powtorzen(zrodla):
         db.add(ConversationSource(conversation_id=conversation.id, source_id=source_id))
     db.commit()
 
@@ -446,7 +455,7 @@ def zmien_zakres(rozmowa_id: int, zrodla: list[int] = Form(default=[]), db: Sess
         raise HTTPException(404, "Nie ma takiej rozmowy")
 
     db.query(ConversationSource).filter_by(conversation_id=rozmowa_id).delete()
-    for source_id in zrodla:
+    for source_id in bez_powtorzen(zrodla):
         db.add(ConversationSource(conversation_id=rozmowa_id, source_id=source_id))
     db.commit()
     return RedirectResponse(f"/rozmowy/{rozmowa_id}", status_code=303)
