@@ -36,7 +36,19 @@ ZBIERANIE_PROMPT = """Wypisz fakty, które podane akapity mówią na temat pytan
 To pierwszy z dwóch kroków: teraz tylko zbierasz surowe informacje, nie piszesz odpowiedzi.
 
 Dla każdego faktu podaj:
-- "tresc": sama informacja, możliwie zwięźle. Nie zdanie z książki, tylko to, co ono mówi. Zamiast "Zalecanymi podłożami do siewu są tzw. ziemie inspektowe lub substrat z torfu wysokiego, który jest odkwaszony i ma odczyn pH 6,0–6,5" napisz "podłoże do siewu: pH 6,0–6,5, odkwaszony torf wysoki albo ziemia inspektowa".
+- "tresc": sama informacja, bez zdania z książki dookoła niej. Ale KOMPLETNA: z liczbami,
+  terminami, nazwami i warunkami, które akapit podaje. Zamiast "Zalecanymi podłożami do siewu
+  są tzw. ziemie inspektowe lub substrat z torfu wysokiego, który jest odkwaszony i ma odczyn
+  pH 6,0–6,5" napisz "podłoże do siewu: pH 6,0–6,5, odkwaszony torf wysoki albo ziemia
+  inspektowa".
+
+  Fakt to nie jest nazwa tematu. "kontrola wilgotności i temperatury w tunelach" nie mówi
+  nic - nie da się z tego napisać ani jednego zdania. Napisz to, co akapit naprawdę podaje:
+  "w dzień nie więcej niż 30°C, w nocy nie mniej niż 16°C, tunel otwarty na przestrzał
+  od połowy maja do końca sierpnia".
+
+  Z jednego akapitu wychodzi zwykle kilka faktów. Nie zlepiaj ich w jeden ogólny i nie
+  pomijaj szczegółów dlatego, że wydają się drobne - to z nich powstaje materiał.
 - "warunek": kiedy to obowiązuje, jeśli źródło to zawęża — "pod osłonami", "przy suchej zgniliźnie wierzchołkowej", "dla odmian wysokich". Pusty ciąg, gdy fakt jest ogólny. Patrz na "poprzedni_fragment": mówi, z jakiej części książki pochodzi akapit.
 - "chunk_id" oraz "quote": dosłowny fragment akapitu, który ten fakt potwierdza.
 
@@ -100,8 +112,8 @@ Dobrze: "Kilka miesięcy wcześniej wysiej nawozy zielone i wzbogać glebę obor
          a tuż przed siewem dodaj kompost — 3-5 kg na metr kwadratowy."
 - Nie zaczynaj dwóch zdań tym samym słowem. Ani razu w całej odpowiedzi. Jeśli trzy zdania
   z rzędu zaczynają się od tego samego czasownika, układasz listę — połącz je w jedno.
-- Nie więcej niż pięć zdań. Jeśli faktów jest więcej, wybierz te, które wprost odpowiadają
-  na pytanie, i zostaw resztę.
+- Wykorzystaj fakty, które dostałeś. Nie streszczaj ich do jednego zdania i nie zostawiaj
+  połowy niewykorzystanej - zostały już wybrane pod to pytanie.
 - Zdanie może korzystać z kilku faktów naraz — podaj wtedy wszystkie ich numery w "fakty".
 
 Uwaga: poniższe przykłady pokazują SPOSÓB pisania. To nie są fakty i nie wolno ich
@@ -162,6 +174,16 @@ Wtedy nie stanie przy niej odnośnik do książki — bo książka mówi co inne
 do niej byłby nieprawdą. Reszta zdania zostaje w swoich kawałkach, ze swoimi numerami
 faktów. Gdy nie korzystasz z żadnego ustalenia, zostaw "ustalenia" puste.
 
+ILE PISAĆ
+Długość dostajesz osobno, na końcu tych zasad. Ale ona jest granicą, nie zadaniem do
+wykonania: jeśli faktów nie starcza na tyle tekstu, o ile poproszono, piszesz tyle, ile
+masz z faktów, i kończysz.
+
+Nigdy nie dopisuj zdań, które nic nie mówią, żeby tekst był dłuższy. "Wybór odpowiedniego
+terminu jest kluczowy dla zdrowego wzrostu roślin", "metody mogą się różnić w zależności
+od warunków i preferencji ogrodnika", "podwiązywanie jest niezbędne" - to są zdania puste.
+Krótszy tekst z samych konkretów jest lepszy od długiego z watą.
+
 GRANICA SWOBODY — to najważniejsze
 Wolno Ci zmienić SPOSÓB powiedzenia. Nie wolno dodać ani jednej informacji, której nie ma
 w faktach.
@@ -174,6 +196,18 @@ to prawda. Tak samo "rób to rano albo wieczorem" zostaje bez "żeby woda nie pa
 Dobrze: "Lej pod krzew, nie na liście."
 
 Żadnych "bo", "żeby", "dzięki czemu", "co pozwala" — chyba że ten powód stoi wprost w fakcie.
+
+Przy dłuższym tekście ta pokusa wraca ze zdwojoną siłą, bo akapit wydaje się pusty bez
+wyjaśnienia. Nie jest. Te doklejki są zmyśleniem tak samo jak wymyślona liczba:
+
+Źle:    "Nie ma potrzeby zamykać tuneli na noc, co ułatwia utrzymanie temperatury."
+Dobrze: "Nie ma potrzeby zamykać tuneli na noc."
+
+Źle:    "Podwiąż rośliny, co chroni owoce przed chorobami grzybowymi."
+Dobrze: "Podwiąż rośliny, żeby owoce nie leżały na ziemi."   (to stoi w fakcie)
+
+Źle:    "Prowadź na jeden pęd, co jest korzystne w ograniczonej przestrzeni tunelu."
+Dobrze: "Prowadź na jeden pęd — da wyższy plon z pędu."      (to stoi w fakcie)
 
 """
 
@@ -270,13 +304,15 @@ GLEBOKOSC = {
 _DLUGOSC = {
     "krotka": "Odpowiadaj krótko. Kilka zdań wystarczy. Jeden akapit.",
     "wiecej": (
-        "Rozwiń temat. Kilkanaście zdań, jeden albo dwa akapity. Nowy akapit zaczynasz,"
+        "Rozwiń temat: jeden albo dwa akapity po cztery, pięć zdań. Nowy akapit zaczynasz,"
         " gdy przechodzisz do innej rzeczy."
     ),
     "material": (
-        "To ma być materiał do czytania, nie odpowiedź na pytanie. Trzy do pięciu akapitów,"
-        " każdy o czym innym — przygotowanie, termin, prowadzenie, kłopoty. Nie streszczaj"
-        " na końcu i nie zapowiadaj na początku, po prostu pisz."
+        "To ma być materiał do czytania, nie odpowiedź na pytanie. Cztery do sześciu akapitów,"
+        " każdy po cztery, pięć zdań, każdy o czym innym — przygotowanie, termin, prowadzenie,"
+        " kłopoty. Nie streszczaj na końcu i nie zapowiadaj na początku, po prostu pisz."
+        " Masz na to kilkadziesiąt faktów: jeden akapit to kilka z nich, a nie jeden"
+        " rozciągnięty na pięć zdań."
     ),
 }
 
@@ -390,7 +426,11 @@ Czego NIE WOLNO Ci odrzucić:
   i to jest informacja, nie usterka. Zostaw oba.
 - faktu, który dotyczy innych warunków uprawy niż pozostałe. To nie powtórzenie.
 
-Zwróć numery wybranych faktów, najważniejsze najpierw, najwyżej tyle, ile mówi "ile_najwyzej"."""
+Nie oszczędzaj. Zostaw WSZYSTKIE fakty dotyczące pytania, aż do liczby "ile_najwyzej" -
+o długości tekstu decyduje kto inny, Ty tylko odsiewasz to, co jest o czymś innym. Odrzucenie
+faktu, który pasuje do pytania, jest gorsze niż zostawienie jednego za dużo.
+
+Zwróć numery wybranych faktów, najważniejsze najpierw."""
 
 _SCHEMA_SEDZIA = {
     "type": "object",
