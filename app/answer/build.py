@@ -321,7 +321,10 @@ FORMY = {
         "na_ksiazke": 6,
         "faktow": 12,
         "planuje": False,
-        "jak": "Odpowiedz na pytanie. Bez wstępu, bez podsumowania.",
+        "jak": (
+            "Odpowiedz na pytanie. Jeden akapit — \"nowy_akapit\" wszędzie fałsz."
+            " Bez wstępu, bez podsumowania."
+        ),
     },
     "rozwiniecie": {
         "na_ksiazke": 8,
@@ -343,9 +346,10 @@ FORMY = {
         "faktow": 14,
         "planuje": False,
         "jak": (
-            "To ma być wpis na Facebooka. Krótko, jednym ciągiem, tonem z próbek wyżej."
-            " Zacznij od rzeczy, nie od zapowiedzi. Bez emotek, bez hasztagów, bez"
-            " wołania o komentarze."
+            "To ma być wpis na Facebooka: jeden akapit, bez podziału —"
+            " \"nowy_akapit\" wszędzie fałsz. Krótko, tonem z próbek wyżej. Zacznij od"
+            " rzeczy, nie od zapowiedzi. Bez emotek, bez hasztagów, bez wołania"
+            " o komentarze."
         ),
     },
     "lista": {
