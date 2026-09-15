@@ -72,6 +72,8 @@
      stałe. Inaczej po godzinie rozmowy trzeba zjechać na sam dół, żeby
      w ogóle dosięgnąć pola. */
   .kolumna > .tresc, .kolumna > .watki { overflow-y: auto; min-height: 0; }
+  /* Pasek przewijania ma byc przy liscie watkow, nie przy samym przycisku. */
+  .kolumna > .nad-watkami { overflow: visible; flex: none; }
   .kolumna > .przewijana { flex: 1; }
   .stopka-rozmowy { border-top: 1px solid var(--ramka); padding: 0.8rem 1rem; background: var(--karta); border-radius: 0 0 8px 8px; }
   .stopka-rozmowy form { display: flex; gap: 0.5rem; align-items: flex-end; }
@@ -153,7 +155,7 @@
      drugim (jeden dla nowego pytania, drugi dla otwartego watku) i nie dalo
      sie odroznic, ktory jest ktory; historia lezala pod nimi, ledwo widoczna. #}
   <div class="kolumna">
-    <div class="tresc">
+    <div class="tresc nad-watkami">
       <a href="/" class="nowa-rozmowa">+ Nowa rozmowa</a>
     </div>
     <ul class="watki">
@@ -301,9 +303,9 @@
          rozmowa czerpie, bez rozwijania. #}
       <details class="wybor-zrodel">
         <summary>
-          Czerpie z:
-          {%- if rozmowa.sources %} {{ rozmowa.sources|length }} z {{ zrodla|length }} książek
-          {%- else %} wszystkich książek ({{ zrodla|length }}){% endif %}
+          Czerpie z: <span class="licznik-zrodel" data-wszystkich="{{ zrodla|length }}">
+          {%- if rozmowa.sources and rozmowa.sources|length < zrodla|length %}{{ rozmowa.sources|length }} z {{ zrodla|length }} książek
+          {%- else %}wszystkich książek ({{ zrodla|length }}){% endif %}</span>
         </summary>
         {# Zaznaczenie zapisuje sie samo, chwile po ostatnim kliknieciu - bez
            przycisku. Przycisk zostaje dla przegladarki bez skryptu, ale skrypt
@@ -360,7 +362,24 @@
     var przycisk = formularz.querySelector('button[type="submit"]');
     if (przycisk) { przycisk.hidden = true; }
     var podsumowanie = formularz.closest('details').querySelector('summary');
+    var licznik = formularz.closest('details').querySelector('.licznik-zrodel');
     var zegar = null;
+
+    // Licznik w naglowku byl renderowany raz, przy wczytaniu strony, wiec po
+    // zapisie w tle pokazywal "3 z 3", gdy zaznaczone byly dwie ksiazki.
+    function odswiezLicznik() {
+      if (!licznik) { return; }
+      var wszystkich = Number(licznik.dataset.wszystkich);
+      var ile = formularz.querySelectorAll('input[name="zrodla"]:checked').length;
+      // Ta sama ksiazka stoi w kilku grupach - liczymy ksiazki, nie pola.
+      var numery = new Set();
+      formularz.querySelectorAll('input[name="zrodla"]:checked')
+        .forEach(function (pole) { numery.add(pole.value); });
+      ile = numery.size;
+      licznik.textContent = (ile && ile < wszystkich)
+        ? ile + ' z ' + wszystkich + ' książek'
+        : 'wszystkich książek (' + wszystkich + ')';
+    }
 
     // Zapis w tle, bez przeladowania strony. Przy zwyklym wyslaniu formularza
     // strona wracala od nowa i rozwiniety wybor zrodel zamykal sie po kazdym
@@ -385,6 +404,7 @@
       zapisz();
     });
     formularz.addEventListener('change', function () {
+      odswiezLicznik();
       clearTimeout(zegar);
       zegar = setTimeout(zapisz, 700);
     });
