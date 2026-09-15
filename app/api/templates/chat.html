@@ -108,6 +108,8 @@
     cursor: pointer; vertical-align: super; line-height: 1.4;
   }
   .znacznik:hover { background: var(--akcent); color: #fff; }
+  .zrodla-odpowiedzi { font-size: 0.85rem; color: var(--przygaszony); margin: 0.4rem 0 0; }
+  .zrodla-odpowiedzi a { color: var(--przygaszony); }
   .ustalenie { font-size: 0.7rem; vertical-align: super; margin-left: 0.15rem; color: var(--przygaszony); border-bottom: 1px dotted var(--przygaszony); cursor: help; }
   .akapit-zrodla { background: var(--tlo); padding: 0.8rem; border-radius: 6px; font-size: 0.95rem; }
   .akapit-zrodla mark { background: #ffe680; padding: 0 0.1rem; }
@@ -211,6 +213,16 @@
                       slowo, ktore mowi wprost, skad sie wziela. -#}
                   {%- if czesc.ustalenie %}<span class="ustalenie" title="{{ czesc.ustalenie }} — rozstrzygnięte w zakładce Do rozstrzygnięcia">ustalenie</span>{% endif -%}
                 {%- endfor -%}
+              </p>
+              {% endif %}
+              {# Komplet książek i stron pod odpowiedzią. W tekście odnośnik stoi
+                 tylko przy liczbach, więc to jest miejsce, w którym widać całość. #}
+              {% set uzyte = zrodla_podsumowanie(w.answer_json) %}
+              {% if uzyte and not w.edited_text %}
+              <p class="zrodla-odpowiedzi">Źródła:
+                {%- for z in uzyte %} <a href="?podglad={{ z.chunk_id }}">{{ z.tytul }}</a>
+                  <span class="podpowiedz">s. {{ z.strony | join(", ") }}</span>{% if not loop.last %} ·{% endif %}
+                {%- endfor %}
               </p>
               {% endif %}
               {% set niepewne = w.answer_json.sentences | rejectattr("verified") | list %}

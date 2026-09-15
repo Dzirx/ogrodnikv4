@@ -1,4 +1,8 @@
-"""Przypisy do źródeł w poprawionym tekście.
+"""Przypisy do źródeł w tekście odpowiedzi i w oknie edycji.
+
+Odnośnik pokazujemy tylko tam, gdzie odcinek niesie twardą wartość - liczbę,
+dawkę, odczyn. Zdanie ogólne ma swoje źródło zapisane w bazie, ale cyferki przy
+nim nie rysujemy: "każde zdanie ma źródło" robiło z porady pracę naukową.
 
 Po ręcznej edycji nie da się przypisać źródeł do zdań automatycznie — tekst
 jest już redaktora. Dlatego edytuje go razem ze znacznikami [1], [2] i sam
@@ -20,16 +24,17 @@ def test_sklada_tekst_ze_znacznikami_do_edycji():
     odpowiedz = {
         "sentences": [
             {"text": "Podlewaj 2-3 razy w tygodniu", "sources": [{"marker": 1}]},
-            {"text": " — zawsze pod krzew.", "sources": [{"marker": 2}]},
+            {"text": " — pod krzew, nie na liście.", "sources": [{"marker": 2}]},
         ]
     }
-    assert tekst_ze_znacznikami(odpowiedz) == "Podlewaj 2-3 razy w tygodniu[1] — zawsze pod krzew.[2]"
+    # Pierwszy odcinek ma liczbę, drugi nie - stąd jeden odnośnik.
+    assert tekst_ze_znacznikami(odpowiedz) == "Podlewaj 2-3 razy w tygodniu[1] — pod krzew, nie na liście."
 
 
 def test_kawalek_moze_miec_kilka_przypisow():
     """Jedno zdanie potrafi stać na dwóch akapitach z różnych książek."""
-    odpowiedz = {"sentences": [{"text": "Lej pod krzew.", "sources": [{"marker": 1}, {"marker": 2}]}]}
-    assert tekst_ze_znacznikami(odpowiedz) == "Lej pod krzew.[1][2]"
+    odpowiedz = {"sentences": [{"text": "Lej 2 litry pod krzew.", "sources": [{"marker": 1}, {"marker": 2}]}]}
+    assert tekst_ze_znacznikami(odpowiedz) == "Lej 2 litry pod krzew.[1][2]"
 
 
 def test_brakujaca_spacja_miedzy_kawalkami_jest_dokladana():
@@ -49,11 +54,11 @@ def test_spacja_na_koncu_kawalka_nie_odkleja_przypisu():
     nie przy następnym zdaniu."""
     odpowiedz = {
         "sentences": [
-            {"text": "Podlewaj co drugi dzień. ", "sources": [{"marker": 1}]},
-            {"text": "W upały częściej.", "sources": [{"marker": 2}]},
+            {"text": "Podlewaj co 2 dni. ", "sources": [{"marker": 1}]},
+            {"text": "W upały co 1 dzień.", "sources": [{"marker": 2}]},
         ]
     }
-    assert tekst_ze_znacznikami(odpowiedz) == "Podlewaj co drugi dzień.[1] W upały częściej.[2]"
+    assert tekst_ze_znacznikami(odpowiedz) == "Podlewaj co 2 dni.[1] W upały co 1 dzień.[2]"
 
 
 def test_przed_przecinkiem_spacji_nie_dokladamy():
@@ -71,11 +76,12 @@ def test_starsza_rozmowa_z_pojedynczym_zrodlem_nadal_sie_sklada():
     pojedyncze "source" przy całym zdaniu. Muszą się nadal wyświetlać."""
     odpowiedz = {
         "sentences": [
-            {"text": "Lej pod krzew.", "source": {"marker": 2}},
+            {"text": "Lej 2 litry pod krzew.", "source": {"marker": 2}},
             {"text": "Najlepsza jest deszczówka.", "source": {"marker": 1}},
         ]
     }
-    assert tekst_ze_znacznikami(odpowiedz) == "Lej pod krzew.[2] Najlepsza jest deszczówka.[1]"
+    # Drugie zdanie nie niesie liczby, więc zostaje bez cyferki.
+    assert tekst_ze_znacznikami(odpowiedz) == "Lej 2 litry pod krzew.[2] Najlepsza jest deszczówka."
 
 
 def test_rozbija_tekst_na_fragmenty_i_odnosniki():
@@ -116,7 +122,7 @@ def test_odnosnik_pokazuje_sie_raz_na_odcinek():
             _kawalek("Podlewaj 2-3 razy w tygodniu", 1),
             _kawalek(" — ", spoiwo=True),
             _kawalek("częściej w upały.", 1),
-            _kawalek(" Najlepsza jest deszczówka.", 2),
+            _kawalek(" Woda ma mieć 18 stopni.", 2),
             _kawalek(" Lej pod krzew.", 2),
             _kawalek(" Rankiem albo wieczorem.", 3),
         ]
@@ -124,14 +130,15 @@ def test_odnosnik_pokazuje_sie_raz_na_odcinek():
 
     widoczne = [[z["marker"] for z in c["znaczniki"]] for c in czesci_odpowiedzi(odpowiedz)]
 
-    assert widoczne == [[], [], [1], [], [2], [3]]
+    # Odcinek 1 i 2 niosą liczbę, trzeci nie - stąd dwie cyferki zamiast sześciu.
+    assert widoczne == [[], [], [1], [], [2], []]
 
 
 def test_spoiwo_nie_przerywa_odcinka():
     """Przecinek ani myślnik nie zmieniają tego, skąd pochodzi zdanie."""
     from app.api.routes import czesci_odpowiedzi
 
-    odpowiedz = {"sentences": [_kawalek("Lej pod krzew", 1), _kawalek(", a ", spoiwo=True), _kawalek("w upały częściej.", 1)]}
+    odpowiedz = {"sentences": [_kawalek("Lej 2 litry", 1), _kawalek(", a ", spoiwo=True), _kawalek("w upały więcej.", 1)]}
 
     assert [[z["marker"] for z in c["znaczniki"]] for c in czesci_odpowiedzi(odpowiedz)] == [[], [], [1]]
 
@@ -143,9 +150,9 @@ def test_ustalenie_przerywa_odcinek():
 
     odpowiedz = {
         "sentences": [
-            _kawalek("Pomidory lubią odczyn", 1),
-            _kawalek(" 6,2.", ustalenie="odczyn gleby"),
-            _kawalek(" Gleba ma być przepuszczalna.", 1),
+            _kawalek("Pomidory lubią odczyn 5,5-6,5", 1),
+            _kawalek(" albo 6,2.", ustalenie="odczyn gleby"),
+            _kawalek(" Gleba ma mieć 3% próchnicy.", 1),
         ]
     }
 
@@ -154,6 +161,38 @@ def test_ustalenie_przerywa_odcinek():
 
 def test_okno_edycji_dostaje_te_same_odnosniki_co_ekran():
     """Inaczej po kliknięciu "popraw" tekst wyglądałby inaczej niż przed chwilą."""
-    odpowiedz = {"sentences": [_kawalek("Lej pod krzew", 1), _kawalek(" i nie mocz liści.", 1)]}
+    odpowiedz = {"sentences": [_kawalek("Lej 2 litry pod krzew", 1), _kawalek(" i nie mocz liści.", 1)]}
 
-    assert tekst_ze_znacznikami(odpowiedz) == "Lej pod krzew i nie mocz liści.[1]"
+    assert tekst_ze_znacznikami(odpowiedz) == "Lej 2 litry pod krzew i nie mocz liści.[1]"
+
+
+def test_odcinek_bez_liczby_zostaje_bez_cyferki():
+    """Sedno zmiany: "Zrób podstawowe badanie gleby w OSCHR" ma swoje źródło
+    w bazie, ale cyferka przy nim niczego nie wnosi - nie ma czego sprawdzać."""
+    from app.api.routes import czesci_odpowiedzi
+
+    odpowiedz = {"sentences": [_kawalek("Zrób podstawowe badanie gleby w OSCHR.", 4)]}
+
+    czesci = czesci_odpowiedzi(odpowiedz)
+
+    assert czesci[0]["znaczniki"] == []
+    assert czesci[0]["zrodla"], "źródło zostaje w danych, znika tylko z ekranu"
+
+
+def test_zrodla_pod_odpowiedzia_grupuja_strony_po_ksiazkach():
+    """Skoro w tekście zostają tylko niektóre odnośniki, komplet musi być widać
+    w jednym miejscu."""
+    from app.api.routes import zrodla_podsumowanie
+
+    odpowiedz = {
+        "sources": [
+            {"marker": 1, "chunk_id": 10, "source_title": "Sułek", "page": 35},
+            {"marker": 2, "chunk_id": 11, "source_title": "Sułek", "page": 31},
+            {"marker": 3, "chunk_id": 12, "source_title": "PODR", "page": 12},
+        ]
+    }
+
+    assert zrodla_podsumowanie(odpowiedz) == [
+        {"tytul": "Sułek", "strony": [31, 35], "chunk_id": 10},
+        {"tytul": "PODR", "strony": [12], "chunk_id": 12},
+    ]

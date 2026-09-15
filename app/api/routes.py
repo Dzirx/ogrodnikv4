@@ -134,6 +134,24 @@ def rozmowa(
     )
 
 
+def zrodla_podsumowanie(odpowiedz: dict) -> list[dict]:
+    """Książki i strony, z których powstała odpowiedź - jedną linijką.
+
+    Skoro odnośniki w tekście zostają tylko przy liczbach, to musi być miejsce,
+    w którym widać komplet. Bez tego zdanie bez cyferki wyglądałoby na wzięte
+    znikąd."""
+    ksiazki: dict[str, dict] = {}
+    for wpis in odpowiedz.get("sources", []):
+        pozycja = ksiazki.setdefault(
+            wpis["source_title"], {"tytul": wpis["source_title"], "strony": [], "chunk_id": wpis["chunk_id"]}
+        )
+        if wpis["page"] not in pozycja["strony"]:
+            pozycja["strony"].append(wpis["page"])
+    for pozycja in ksiazki.values():
+        pozycja["strony"].sort()
+    return list(ksiazki.values())
+
+
 def _zrodla_czesci(czesc: dict) -> list[dict]:
     """Przypisy jednego kawałka tekstu.
 
@@ -172,6 +190,12 @@ def czesci_odpowiedzi(odpowiedz: dict) -> list[dict]:
     return _bez_powtorzonych_znacznikow(wynik)
 
 
+# Co uznajemy za twarda wartosc: liczba, procent, stopnie. Przy takim zdaniu
+# odnosnik zarabia na swoje miejsce, bo to jest to, co redaktor bedzie chcial
+# sprawdzic w ksiazce. Przy zdaniu ogolnym tylko zasmieca.
+_TWARDA_WARTOSC = re.compile(r"\d")
+
+
 def _bez_powtorzonych_znacznikow(czesci: list[dict]) -> list[dict]:
     """Odnośnik pokazujemy raz na odcinek, nie przy każdym kawałku.
 
@@ -194,7 +218,25 @@ def _bez_powtorzonych_znacznikow(czesci: list[dict]) -> list[dict]:
         )
         if nastepny is not None and _te_same(nastepny["zrodla"], czesc["zrodla"]):
             czesc["znaczniki"] = []
+            continue
+        # Odcinek bez ani jednej liczby zostaje bez cyferki. Źródło jest
+        # zapisane, podgląd działa, tylko nie rysujemy go w tekście - inaczej
+        # z odpowiedzi robi się praca naukowa zamiast porady.
+        if not _TWARDA_WARTOSC.search(_odcinek(czesci, numer)):
+            czesc["znaczniki"] = []
     return czesci
+
+
+def _odcinek(czesci: list[dict], koniec: int) -> str:
+    """Tekst całego odcinka opartego na tym samym akapicie, aż do tego kawałka."""
+    tekst = czesci[koniec]["text"]
+    for wczesniejszy in reversed(czesci[:koniec]):
+        if wczesniejszy["zrodla"] and not _te_same(wczesniejszy["zrodla"], czesci[koniec]["zrodla"]):
+            break
+        if wczesniejszy.get("ustalenie"):
+            break
+        tekst = wczesniejszy["text"] + tekst
+    return tekst
 
 
 def _te_same(a: list[dict], b: list[dict]) -> bool:
@@ -679,5 +721,6 @@ def rozstrzygnij(
 
 # Funkcje pomocnicze dla szablonow - przypisane na koncu, bo definiowane wyzej.
 templates.env.globals["czesci_odpowiedzi"] = czesci_odpowiedzi
+templates.env.globals["zrodla_podsumowanie"] = zrodla_podsumowanie
 templates.env.globals["tekst_ze_znacznikami"] = tekst_ze_znacznikami
 templates.env.globals["rozbij_znaczniki"] = rozbij_znaczniki

@@ -22,7 +22,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 from openai import OpenAI
 
-from app.answer.cytaty import quote_is_in_chunk
+from app.answer.cytaty import normalize, quote_is_in_chunk
 from app.answer.konflikty import ustalenia_dla, znajdz_konflikty
 from app.config import settings
 from app.db.base import SessionLocal
@@ -90,6 +90,14 @@ CZEGO NIE ROBISZ
 JAK TO MA PŁYNĄĆ
 - To ma być wypowiedź, nie lista. Nie przerabiaj faktów jeden po drugim na osobne zdania —
   połącz te, które mówią o tej samej rzeczy.
+- Fakt po fakcie, zdanie po zdaniu, to zbitka, której nikt nie czyta. Wiąż je: "a",
+  "za to", "przy okazji", "do tego", "zanim", "kiedy już". Dwa fakty o tym samym etapie
+  uprawy prawie zawsze da się powiedzieć jednym zdaniem.
+
+Źle:    "Kilka miesięcy wcześniej wysiej nawozy zielone. Wzbogacaj glebę obornikiem.
+         Przed siewem dodaj kompost 3-5 kg na metr kwadratowy."
+Dobrze: "Kilka miesięcy wcześniej wysiej nawozy zielone i wzbogać glebę obornikiem,
+         a tuż przed siewem dodaj kompost — 3-5 kg na metr kwadratowy."
 - Nie zaczynaj dwóch zdań tym samym słowem. Ani razu w całej odpowiedzi. Jeśli trzy zdania
   z rzędu zaczynają się od tego samego czasownika, układasz listę — połącz je w jedno.
 - Nie więcej niż pięć zdań. Jeśli faktów jest więcej, wybierz te, które wprost odpowiadają
@@ -124,8 +132,12 @@ Kawałek, który cokolwiek mówi, podaje numery faktów, na których stoi. Jeśl
 kawałek nadal stoi na tym samym fakcie, powtórz ten numer.
 
 Kawałek bez numerów też jest dozwolony, ale WYŁĄCZNIE jako spoiwo: przecinek, myślnik,
-spójnik. ", a", " — ", ". Za to". Nic więcej. W spoiwie nie wolno podać żadnej liczby
-ani nazwać żadnej rzeczy — pierwsze słowo niosące treść musi stać w kawałku z numerem.
+spójnik. ", a", " — ", ". Za to". W spoiwie nie wolno podać żadnej liczby ani nazwać
+żadnej rzeczy — pierwsze słowo niosące treść musi stać w kawałku z numerem.
+
+Wolno Ci też wpleść krótki zwrot łączący, wyłącznie jeden z tych: "Do tego", "Na koniec",
+"Jeszcze jedno", "Przy okazji", "Za to". Żadnego innego — zwrot, którego tu nie ma,
+zostanie odrzucony jako zdanie bez pokrycia w książce.
 
 Przykład dla faktów 0: "podlewać 2-3 razy w tygodniu, w czasie kwitnienia",
 1: "częściej w upały i pod osłonami", 2: "lać pod krzew, nie moczyć liści":
@@ -536,9 +548,23 @@ _SPOIWO = {
 }
 
 
+# Zwroty, ktorymi wolno polaczyc dwa fakty w osobne zdanie. Lista zamknieta
+# z tego samego powodu co _SPOIWO: zdanie laczace nie moze niczego twierdzic,
+# a najprosciej to zagwarantowac, wybierajac z gotowego zestawu. Bez nich
+# odpowiedz jest zbitka faktow jeden po drugim i nikt tego nie czyta.
+_LACZNIKI = {
+    "do tego", "na koniec", "jeszcze jedno", "przy okazji", "za to",
+    "i jeszcze", "poza tym warto wiedziec tyle", "tyle o tym",
+}
+
+
 def jest_spoiwem(tekst: str) -> bool:
     """Czy kawalek bez przypisu jest samym spoiwem, bez wlasnej tresci."""
     slowa = re.findall(r"\w+", tekst.lower(), flags=re.UNICODE)
+    if not slowa:
+        return True
+    if " ".join(slowa) in {normalize(l) for l in _LACZNIKI}:
+        return True
     return all(slowo in _SPOIWO for slowo in slowa)
 
 
