@@ -68,6 +68,14 @@
   .odpowiedz p { margin: 0 0 0.8rem; }
   .odpowiedz .zdanie.niepotwierdzone { background: var(--uwaga-tlo); }
   .uwagi-jezyka { margin-top: 0.5rem; }
+  .narzedzia-odpowiedzi { margin: 0.3rem 0 0; }
+  .ikona {
+    background: none; border: 1px solid var(--ramka); color: var(--przygaszony);
+    padding: 0.15rem 0.5rem; font-size: 0.8rem; border-radius: 4px; margin-right: 0.3rem;
+  }
+  .ikona:hover { color: var(--tekst); background: var(--tlo); }
+  .edycja textarea { font: inherit; }
+  .tekst-poprawiony { border-left: 3px solid var(--akcent); padding-left: 0.7rem; }
   .uwagi-jezyka > summary { cursor: pointer; color: var(--przygaszony); font-size: 0.85rem; }
   .uwagi-jezyka ul { margin: 0.4rem 0 0; padding-left: 1.2rem; font-size: 0.85rem; color: var(--przygaszony); }
   .niepotwierdzone { background: var(--uwaga-tlo); border-left: 3px solid var(--uwaga); padding-left: 0.6rem; }
@@ -137,22 +145,37 @@
           {% elif w.answer_json and w.answer_json.note %}
             <p>{{ w.answer_json.note }}</p>
           {% elif w.answer_json %}
-            <div class="odpowiedz">
+            <div class="odpowiedz" id="odp-{{ w.id }}">
               {# Zdania w JEDNYM akapicie, nie każde w osobnym. Osobne akapity
                  sprawiały, że odpowiedź wyglądała jak lista pisana linijka po
                  linijce, nawet gdy tekst był spójny. Znacznik źródła idzie
                  zaraz za zdaniem, w indeksie górnym - tak jak przypis. #}
+              {% if w.edited_text %}
+              {# Tekst poprawiony recznie - pokazujemy go zamiast zdan od
+                 modelu. Zrodla zostaja pod spodem, bo tresc nadal na nich sie
+                 opiera, tylko powiedziana po mysli redaktora. #}
+              <p class="tekst-poprawiony">{{ w.edited_text }}</p>
+              {# Kazde zrodlo raz, nawet gdy kilka zdan opieralo sie na tym samym.
+                 Przy poprawionym tekscie zdania juz nie istnieja osobno, wiec
+                 lista numerow bez odduplikowania wygladala jak "1 1 2 2 3 2". #}
+              <p class="podpowiedz">Źródła:
+                {% for wpis in w.answer_json.sources %}
+                <a class="znacznik" href="?podglad={{ wpis.chunk_id }}" title="{{ wpis.source_title }}, strona {{ wpis.page }}">{{ wpis.marker }}</a>
+                {%- endfor %}
+              </p>
+              {% else %}
               <p>
                 {%- for zdanie in w.answer_json.sentences -%}
                   <span class="zdanie{% if not zdanie.verified %} niepotwierdzone{% endif %}">{{ zdanie.text }}</span>{% if zdanie.source %}<a class="znacznik" href="?podglad={{ zdanie.source.chunk_id }}&w={{ w.id }}&z={{ loop.index0 }}" title="{{ zdanie.source.source_title }}, strona {{ zdanie.source.page }}">{{ zdanie.source.marker }}</a>{% endif %}{{ " " }}
                 {%- endfor -%}
               </p>
+              {% endif %}
               {% set uwagi = w.answer_json.sentences | selectattr("styl") | list %}
               {% set niepewne = w.answer_json.sentences | rejectattr("verified") | list %}
               {% if niepewne %}
               <p><small class="uwaga-stylu">Nie znalazłem w źródle: {{ niepewne | map(attribute="text") | join(" · ") }}</small></p>
               {% endif %}
-              {% if uwagi %}
+              {% if uwagi and not w.edited_text %}
               <details class="uwagi-jezyka">
                 <summary>Uwagi do języka ({{ uwagi | length }})</summary>
                 <ul>
@@ -160,6 +183,21 @@
                 </ul>
               </details>
               {% endif %}
+
+              <p class="narzedzia-odpowiedzi">
+                <button type="button" class="ikona" data-kopiuj="odp-{{ w.id }}" title="Kopiuj odpowiedź">⧉ kopiuj</button>
+                <button type="button" class="ikona" data-edytuj="edycja-{{ w.id }}" title="Popraw tekst">✎ popraw</button>
+                {% if w.edited_text %}<small class="podpowiedz">poprawione ręcznie</small>{% endif %}
+              </p>
+
+              <form class="edycja" id="edycja-{{ w.id }}" method="post"
+                    action="/rozmowy/{{ rozmowa.id }}/wiadomosci/{{ w.id }}" hidden>
+                <textarea name="tekst" rows="6">{{ w.edited_text or (w.answer_json.sentences | map(attribute="text") | join(" ")) }}</textarea>
+                <p>
+                  <button type="submit">Zapisz</button>
+                  <span class="podpowiedz">Puste pole przywraca wersję z modelu.</span>
+                </p>
+              </form>
             </div>
           {% endif %}
         {% endfor %}
@@ -222,4 +260,30 @@
   {% endif %}
 
 </div>
+
+<script>
+  // Kopiowanie i edycja odpowiedzi - jedyny skrypt poza zaznaczaniem grupy
+  // zrodel. Bez niego redaktor musialby zaznaczac tekst myszka.
+  document.querySelectorAll('[data-kopiuj]').forEach(function (przycisk) {
+    przycisk.addEventListener('click', function () {
+      var blok = document.getElementById(przycisk.dataset.kopiuj);
+      var tekst = blok.querySelector('.tekst-poprawiony')
+        ? blok.querySelector('.tekst-poprawiony').innerText
+        : Array.from(blok.querySelectorAll('.zdanie')).map(function (z) { return z.innerText; }).join(' ');
+      navigator.clipboard.writeText(tekst).then(function () {
+        var poprzedni = przycisk.innerText;
+        przycisk.innerText = '✓ skopiowane';
+        setTimeout(function () { przycisk.innerText = poprzedni; }, 1500);
+      });
+    });
+  });
+
+  document.querySelectorAll('[data-edytuj]').forEach(function (przycisk) {
+    przycisk.addEventListener('click', function () {
+      var formularz = document.getElementById(przycisk.dataset.edytuj);
+      formularz.hidden = !formularz.hidden;
+      if (!formularz.hidden) { formularz.querySelector('textarea').focus(); }
+    });
+  });
+</script>
 {% endblock %}

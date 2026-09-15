@@ -5,6 +5,7 @@ Nic poza tym nie ma prawa pojawić się w nawigacji.
 """
 
 import re
+from datetime import datetime
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
@@ -252,6 +253,29 @@ def zmien_zakres(rozmowa_id: int, zrodla: list[int] = Form(default=[]), db: Sess
     return RedirectResponse(f"/rozmowy/{rozmowa_id}", status_code=303)
 
 
+@router.post("/rozmowy/{rozmowa_id}/wiadomosci/{wiadomosc_id}")
+def popraw_odpowiedz(
+    rozmowa_id: int,
+    wiadomosc_id: int,
+    tekst: str = Form(...),
+    db: Session = Depends(get_db),
+):
+    """Ręczna poprawka odpowiedzi.
+
+    Redaktor poprawia gotowy tekst, nie zdania z przypisami - to ma być
+    edycja, a nie żonglowanie numerami. Źródła zostają: treść nadal się na
+    nich opiera, tylko powiedziana po jego myśli. Puste pole cofa poprawkę."""
+    wiadomosc = db.get(Message, wiadomosc_id)
+    if wiadomosc is None or wiadomosc.conversation_id != rozmowa_id:
+        raise HTTPException(404, "Nie ma takiej wiadomości")
+
+    oczyszczony = tekst.strip()
+    wiadomosc.edited_text = oczyszczony or None
+    wiadomosc.edited_at = datetime.utcnow() if oczyszczony else None
+    db.commit()
+    return RedirectResponse(f"/rozmowy/{rozmowa_id}", status_code=303)
+
+
 @router.get("/zrodla", response_class=HTMLResponse)
 def zrodla(request: Request, blad: str | None = None, db: Session = Depends(get_db)):
     wszystkie = db.query(Source).order_by(Source.id.desc()).all()
@@ -436,8 +460,6 @@ def rozstrzygnij(
     ani drugie, 5,7, bo będzie bezpieczniej". Nie wymyśla jej model, tylko
     człowiek - dlatego w odpowiedziach będzie oznaczona jako ustalenie
     redakcji, nie cytat ze źródła."""
-    from datetime import datetime
-
     konflikt = db.get(Conflict, konflikt_id)
     if konflikt is None:
         raise HTTPException(404, "Nie ma takiego konfliktu")

@@ -134,6 +134,11 @@ class Message(Base):
     role: Mapped[str] = mapped_column(String(16))
     text: Mapped[str] = mapped_column(Text)
     answer_json: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    # Tekst poprawiony recznie przez redaktora. Gdy jest, pokazujemy jego
+    # zamiast zdan od modelu - ale zrodla zostaja, bo tresc nadal na nich
+    # sie opiera.
+    edited_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    edited_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     # pending | ready | error - odpowiedz powstaje w tle
     status: Mapped[str] = mapped_column(String(16), default="ready")
