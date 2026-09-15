@@ -27,7 +27,7 @@ from app.answer.konflikty import ustalenia_dla, znajdz_konflikty
 from app.config import settings
 from app.db.base import SessionLocal
 from app.db.models import Chunk, Page, Source
-from app.search.index import szukaj_w_kazdej_ksiazce
+from app.search.index import NA_KSIAZKE, szukaj_w_kazdej_ksiazce
 
 _openai = OpenAI(api_key=settings.openai_api_key)
 
@@ -128,6 +128,10 @@ kawałki i tak ma być — to nie są osobne zdania.
 Kawałek zaczynający się w środku zdania zaczyna się od spacji albo od znaku
 przestankowego. Inaczej słowa się skleją.
 
+"nowy_akapit" ustaw na prawdę w kawałku, który zaczyna nowy akapit — czyli wtedy, gdy
+przechodzisz do innej rzeczy. W pierwszym kawałku zawsze fałsz. Przy krótkiej odpowiedzi
+akapit jest jeden, więc wszędzie fałsz.
+
 Kawałek, który cokolwiek mówi, podaje numery faktów, na których stoi. Jeśli następny
 kawałek nadal stoi na tym samym fakcie, powtórz ten numer.
 
@@ -171,7 +175,7 @@ Dobrze: "Lej pod krzew, nie na liście."
 
 Żadnych "bo", "żeby", "dzięki czemu", "co pozwala" — chyba że ten powód stoi wprost w fakcie.
 
-Odpowiadaj krótko. Kilka zdań wystarczy."""
+"""
 
 
 _SCHEMA_FAKTY = {
@@ -207,8 +211,9 @@ _SCHEMA_ODPOWIEDZ = {
                     "tekst": {"type": "string"},
                     "fakty": {"type": "array", "items": {"type": "integer"}},
                     "ustalenia": {"type": "array", "items": {"type": "integer"}},
+                    "nowy_akapit": {"type": "boolean"},
                 },
-                "required": ["tekst", "fakty", "ustalenia"],
+                "required": ["tekst", "fakty", "ustalenia", "nowy_akapit"],
                 "additionalProperties": False,
             },
         }
@@ -220,48 +225,103 @@ _SCHEMA_ODPOWIEDZ = {
 # Ile ostatnich wiadomosci wystarczy, zeby zrozumiec pytanie doprecyzowujace.
 OKNO_HISTORII = 4
 
-_PRZEPISZ_PROMPT = """Przepisz ostatnie pytanie tak, żeby było zrozumiałe bez historii rozmowy.
+_PRZEPISZ_PROMPT = """Przepisz ostatnie pytanie tak, żeby było zrozumiałe bez historii rozmowy,
+i oceń, ile treści oczekuje pytający.
 
-Zasady:
+Przepisanie:
 - Zwróć samo przepisane pytanie, bez komentarza.
-- Uzupełnij brakujący podmiot z historii: "a w tunelu?" po pytaniu o wysiew pomidora to "wysiew pomidora w tunelu".
+- Uzupełnij brakujący podmiot z historii: "a jak w tunelu?" po pytaniu o wysiew pomidora
+  to "wysiew pomidora w tunelu".
+- Pytanie zaczynające się od "a", "no a", "to jak" albo samo dopowiadające warunek
+  ("a w gruncie?", "a zimą?") ZAWSZE dotyczy poprzedniego tematu. Wstaw ten temat,
+  nawet jeśli pytanie wygląda na zrozumiałe samo z siebie - dla wyszukiwania nie jest.
+- Gdy pytanie prosi o więcej na temat, o którym już była mowa ("rozpisz to", "potrzebuję
+  więcej szczegółów"), przepisane pytanie MUSI zachować tamten temat. To jest pogłębienie
+  poprzedniej odpowiedzi, nie nowe pytanie.
 - Nie dodawaj treści, której w rozmowie nie ma. Nie odpowiadaj na pytanie.
-- Jeśli pytanie jest już samodzielne, zwróć je bez zmian."""
+
+Głębokość:
+- "krotka" — pytanie o konkret: "w jakim pH sadzić pomidory", "kiedy wysiewać rozsadę".
+- "wiecej" — prośba o rozwinięcie: "rozpisz to", "potrzebuję więcej szczegółów",
+  "a co jeszcze", "opisz dokładniej".
+- "material" — prośba o tekst do czytania, nie o odpowiedź: "napisz artykuł",
+  "przygotuj materiał", "zrób poradnik", "opisz szeroko temat"."""
+
+_SCHEMA_PYTANIE = {
+    "type": "object",
+    "properties": {
+        "pytanie": {"type": "string"},
+        "glebokosc": {"type": "string", "enum": ["krotka", "wiecej", "material"]},
+    },
+    "required": ["pytanie", "glebokosc"],
+    "additionalProperties": False,
+}
+
+# Ile akapitow z kazdej ksiazki i ile faktow do pisania - zaleznie od tego,
+# o co poproszono. Do tej pory obie liczby byly stale, a prompt konczyl sie
+# zdaniem "odpowiadaj krotko": prosba o artykul i prosba o wiecej szczegolow
+# nie mialy jak niczego zmienic.
+GLEBOKOSC = {
+    "krotka": {"na_ksiazke": 6, "faktow": 12},
+    "wiecej": {"na_ksiazke": 10, "faktow": 22},
+    "material": {"na_ksiazke": 14, "faktow": 36},
+}
+
+_DLUGOSC = {
+    "krotka": "Odpowiadaj krótko. Kilka zdań wystarczy. Jeden akapit.",
+    "wiecej": (
+        "Rozwiń temat. Kilkanaście zdań, jeden albo dwa akapity. Nowy akapit zaczynasz,"
+        " gdy przechodzisz do innej rzeczy."
+    ),
+    "material": (
+        "To ma być materiał do czytania, nie odpowiedź na pytanie. Trzy do pięciu akapitów,"
+        " każdy o czym innym — przygotowanie, termin, prowadzenie, kłopoty. Nie streszczaj"
+        " na końcu i nie zapowiadaj na początku, po prostu pisz."
+    ),
+}
 
 
-def przepisz_pytanie(historia: list[tuple[str, str]], pytanie: str) -> str:
-    """Pytanie zrozumiale bez historii rozmowy.
+def zrozum_pytanie(historia: list[tuple[str, str]], pytanie: str) -> tuple[str, str]:
+    """Pytanie zrozumiale bez historii rozmowy i oczekiwana glebokosc odpowiedzi.
 
-    Bez tego "a w tunelu?" nie ma czego szukac - wyszukiwanie dostaje trzy
-    slowa bez podmiotu i zwraca przypadkowe akapity.
+    Bez przepisania "a w tunelu?" nie ma czego szukac - wyszukiwanie dostaje trzy
+    slowa bez podmiotu. Bez glebokosci kazda odpowiedz wychodzila tak samo dluga,
+    a "potrzebuje wiecej szczegolow" dawalo MNIEJ niz poprzednia: pytanie szlo
+    do wyszukiwania jako nowe i trafialo gorzej.
 
-    To krok WYSZUKIWANIA, nie redagowania: przepisanie nie dotyka zasady, ze
-    tresc odpowiedzi pochodzi wylacznie ze zrodel. Gdy sie nie powiedzie,
-    zostaje oryginalne pytanie - gorsze wyszukiwanie jest lepsze niz brak
-    odpowiedzi."""
+    To krok WYSZUKIWANIA, nie redagowania: nie dotyka zasady, ze tresc odpowiedzi
+    pochodzi wylacznie ze zrodel. Gdy sie nie powiedzie, zostaje oryginalne
+    pytanie i krotka odpowiedz."""
     if not historia:
-        return pytanie
+        zapis = f"Pytanie: {pytanie}"
+    else:
+        zapis = "\n".join(
+            f"{'Pytanie' if rola == 'user' else 'Odpowiedź'}: {tekst}"
+            for rola, tekst in historia[-OKNO_HISTORII:]
+        ) + f"\nPytanie: {pytanie}"
 
-    zapis = "\n".join(
-        f"{'Pytanie' if rola == 'user' else 'Odpowiedź'}: {tekst}"
-        for rola, tekst in historia[-OKNO_HISTORII:]
-    )
     try:
         odpowiedz = _openai.chat.completions.create(
             model=settings.analysis_model,
             temperature=0,
             messages=[
                 {"role": "system", "content": _PRZEPISZ_PROMPT},
-                {"role": "user", "content": f"{zapis}\nPytanie: {pytanie}"},
+                {"role": "user", "content": zapis},
             ],
+            response_format={
+                "type": "json_schema",
+                "json_schema": {"name": "pytanie", "schema": _SCHEMA_PYTANIE, "strict": True},
+            },
         )
-        return (odpowiedz.choices[0].message.content or "").strip() or pytanie
+        wynik = json.loads(odpowiedz.choices[0].message.content)
     except Exception:
-        return pytanie
+        return pytanie, "krotka"
+
+    return (wynik.get("pytanie") or "").strip() or pytanie, wynik.get("glebokosc", "krotka")
 
 
 def zbierz_fakty_do_pytania(
-    db, pytanie: str, source_ids: list[int] | None = None
+    db, pytanie: str, source_ids: list[int] | None = None, na_ksiazke: int = NA_KSIAZKE
 ) -> tuple[list[dict], dict, dict, dict]:
     """Fakty wypisane OSOBNO z kazdej ksiazki z zakresu.
 
@@ -271,7 +331,7 @@ def zbierz_fakty_do_pytania(
     wypadal jeden akapit, a czesc nie dostawala nic, wiec ksiazka slabsza
     jezykowo nie miala jak dojsc do glosu. Liczba ksiazek nie moze zmieniac
     zasad."""
-    per_ksiazka = szukaj_w_kazdej_ksiazce(pytanie, source_ids)
+    per_ksiazka = szukaj_w_kazdej_ksiazce(pytanie, source_ids, na_ksiazke)
     if not per_ksiazka:
         return [], {}, {}, {}
 
@@ -312,8 +372,8 @@ def zbierz_fakty_do_pytania(
 # nie obliczenia.
 RAZEM_KSIAZEK = 6
 
-# Ile faktow trafia do pisania odpowiedzi. Odpowiedz ma byc krotka, a przy
-# kilkunastu ksiazkach faktow bywa kilkadziesiat.
+# Domyslna liczba faktow do pisania. Przy prosbie o material rosnie - patrz
+# GLEBOKOSC.
 MAX_FAKTOW = 12
 
 SEDZIA_PROMPT = """Dostajesz pytanie i fakty wypisane z kilku książek ogrodniczych.
@@ -340,13 +400,15 @@ _SCHEMA_SEDZIA = {
 }
 
 
-def wybierz_fakty(pytanie: str, fakty: list[dict], sources: dict, by_id: dict) -> list[dict]:
+def wybierz_fakty(
+    pytanie: str, fakty: list[dict], sources: dict, by_id: dict, ile: int = MAX_FAKTOW
+) -> list[dict]:
     """Ktore z zebranych faktow ida do odpowiedzi.
 
     Krok osobny od zbierania, bo zbieranie ma byc szerokie, a odpowiedz krotka.
     Wczesniej robil to limit akapitow w wyszukiwaniu i dlatego jedno psulo
     drugie: zawezenie pod krotka odpowiedz odbieralo glos ksiazkom."""
-    if len(fakty) <= MAX_FAKTOW:
+    if len(fakty) <= ile:
         return fakty
 
     do_oceny = [
@@ -369,7 +431,7 @@ def wybierz_fakty(pytanie: str, fakty: list[dict], sources: dict, by_id: dict) -
                 {
                     "role": "user",
                     "content": json.dumps(
-                        {"pytanie": pytanie, "ile_najwyzej": MAX_FAKTOW, "fakty": do_oceny},
+                        {"pytanie": pytanie, "ile_najwyzej": ile, "fakty": do_oceny},
                         ensure_ascii=False,
                     ),
                 },
@@ -383,10 +445,10 @@ def wybierz_fakty(pytanie: str, fakty: list[dict], sources: dict, by_id: dict) -
     except Exception:
         # Gdy sedzia nie odpowie, bierzemy poczatek listy - gorsza odpowiedz
         # jest lepsza niz brak odpowiedzi.
-        return fakty[:MAX_FAKTOW]
+        return fakty[:ile]
 
     numery = [n for n in wybrane if isinstance(n, int) and 0 <= n < len(fakty)]
-    return [fakty[n] for n in dict.fromkeys(numery)][:MAX_FAKTOW] or fakty[:MAX_FAKTOW]
+    return [fakty[n] for n in dict.fromkeys(numery)][:ile] or fakty[:ile]
 
 
 def answer_question(
@@ -395,11 +457,14 @@ def answer_question(
     historia: list[tuple[str, str]] | None = None,
 ) -> dict:
     """Zwraca odpowiedz gotowa do pokazania: kawalki tekstu z cytatami i zrodla."""
-    do_wyszukania = przepisz_pytanie(historia or [], question)
+    do_wyszukania, glebokosc = zrozum_pytanie(historia or [], question)
+    miara = GLEBOKOSC.get(glebokosc, GLEBOKOSC["krotka"])
 
     db = SessionLocal()
     try:
-        fakty, by_id, pages, sources = zbierz_fakty_do_pytania(db, do_wyszukania, source_ids)
+        fakty, by_id, pages, sources = zbierz_fakty_do_pytania(
+            db, do_wyszukania, source_ids, na_ksiazke=miara["na_ksiazke"]
+        )
         if not fakty:
             return _no_data()
 
@@ -408,8 +473,10 @@ def answer_question(
         # ma byc szerokie - to dwa rozne cele i nie moga dzielic jednej liczby.
         znajdz_konflikty(db, do_wyszukania, fakty, by_id)
 
-        do_pisania = wybierz_fakty(do_wyszukania, fakty, sources, by_id)
-        raw = _napisz_z_faktow(do_wyszukania, do_pisania, ustalenia_dla(db, list(by_id)))
+        do_pisania = wybierz_fakty(do_wyszukania, fakty, sources, by_id, miara["faktow"])
+        raw = _napisz_z_faktow(
+            do_wyszukania, do_pisania, ustalenia_dla(db, list(by_id)), glebokosc
+        )
         return _verify(raw, by_id, pages, sources)
     finally:
         db.close()
@@ -478,7 +545,9 @@ def _zbierz_fakty(question: str, context: list[dict]) -> list[dict]:
     return json.loads(odpowiedz.choices[0].message.content).get("fakty", [])
 
 
-def _napisz_z_faktow(question: str, fakty: list[dict], ustalenia: list[dict] | None = None) -> dict:
+def _napisz_z_faktow(
+    question: str, fakty: list[dict], ustalenia: list[dict] | None = None, glebokosc: str = "krotka"
+) -> dict:
     """Krok drugi: odpowiedz ulozona z faktow.
 
     Model dostaje tylko tresc i warunek - bez cytatow i bez zdan zrodlowych.
@@ -491,7 +560,7 @@ def _napisz_z_faktow(question: str, fakty: list[dict], ustalenia: list[dict] | N
         model=settings.answer_model,
         temperature=0.3,
         messages=[
-            {"role": "system", "content": PISANIE_PROMPT},
+            {"role": "system", "content": PISANIE_PROMPT + "\n\n" + _DLUGOSC.get(glebokosc, _DLUGOSC["krotka"])},
             {
                 "role": "user",
                 "content": json.dumps(
@@ -530,7 +599,12 @@ def _napisz_z_faktow(question: str, fakty: list[dict], ustalenia: list[dict] | N
             if isinstance(n, int) and 0 <= n < len(ustalenia or [])
         ]
         czesci.append(
-            {"text": czesc.get("tekst", ""), "zrodla": [] if uzyte else zrodla, "ustalenie": uzyte[0] if uzyte else None}
+            {
+                "text": czesc.get("tekst", ""),
+                "zrodla": [] if uzyte else zrodla,
+                "ustalenie": uzyte[0] if uzyte else None,
+                "nowy_akapit": bool(czesc.get("nowy_akapit")),
+            }
         )
     return {"czesci": czesci}
 
@@ -613,6 +687,7 @@ def _verify(raw: dict, by_id: dict, pages: dict, sources: dict) -> dict:
                 # Ustalenie rozstrzygnal czlowiek - to mocniejsze niz cytat.
                 "verified": bool(ustalenie) or spoiwo or (bool(zrodla) and all(z["verified"] for z in zrodla)),
                 "ustalenie": ustalenie,
+                "nowy_akapit": bool(item.get("nowy_akapit")),
                 "spoiwo": spoiwo,
                 "sources": zrodla,
             }

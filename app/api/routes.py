@@ -185,6 +185,7 @@ def czesci_odpowiedzi(odpowiedz: dict) -> list[dict]:
                 "verified": czesc.get("verified", False),
                 "zrodla": _zrodla_czesci(czesc),
                 "ustalenie": czesc.get("ustalenie"),
+                "nowy_akapit": bool(czesc.get("nowy_akapit")) and bool(wynik),
             }
         )
     return _bez_powtorzonych_znacznikow(wynik)

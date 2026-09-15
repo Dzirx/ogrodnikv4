@@ -54,15 +54,7 @@ def test_normalizacja_laczy_rozne_mysniki():
     assert normalize("22–28") == normalize("22-28")
 
 
-def test_pierwsze_pytanie_nie_jest_przepisywane():
-    """Bez historii nie ma czego uzupełniać - i nie ma po co płacić za
-    wywołanie modelu."""
-    from app.answer.build import przepisz_pytanie
-
-    assert przepisz_pytanie([], "w jakim pH sadzić pomidory?") == "w jakim pH sadzić pomidory?"
-
-
-def test_przepisanie_wraca_do_oryginalu_gdy_model_zawiedzie(monkeypatch):
+def test_gdy_model_zawiedzie_zostaje_pytanie_i_krotka_odpowiedz(monkeypatch):
     """Gorsze wyszukiwanie jest lepsze niż brak odpowiedzi."""
     import app.answer.build as build
 
@@ -74,9 +66,19 @@ def test_przepisanie_wraca_do_oryginalu_gdy_model_zawiedzie(monkeypatch):
                     raise RuntimeError("model niedostępny")
 
     monkeypatch.setattr(build, "_openai", Zepsuty)
-    historia = [("user", "wysiew pomidora"), ("assistant", "Wysiewa się w marcu.")]
 
-    assert build.przepisz_pytanie(historia, "a w tunelu?") == "a w tunelu?"
+    assert build.zrozum_pytanie([], "w jakim pH sadzić pomidory?") == (
+        "w jakim pH sadzić pomidory?",
+        "krotka",
+    )
+
+
+def test_glebokosc_skaluje_zakres_wyszukiwania():
+    """Prośba o materiał musi dać więcej materiału, nie ten sam co zawsze."""
+    from app.answer.build import GLEBOKOSC
+
+    assert GLEBOKOSC["krotka"]["na_ksiazke"] < GLEBOKOSC["wiecej"]["na_ksiazke"] < GLEBOKOSC["material"]["na_ksiazke"]
+    assert GLEBOKOSC["krotka"]["faktow"] < GLEBOKOSC["wiecej"]["faktow"] < GLEBOKOSC["material"]["faktow"]
 
 
 def test_sklejone_kawalki_daja_jeden_akapit():
