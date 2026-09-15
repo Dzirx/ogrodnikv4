@@ -10,11 +10,22 @@ from datetime import datetime
 from fastapi import APIRouter, Depends, Form, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from app.answer.build import BEZ_SPACJI
 from app.db.base import get_db
-from app.db.models import Chunk, Conflict, Conversation, ConversationSource, Message, Page, Source
+from app.db.models import (
+    Chunk,
+    Conflict,
+    Conversation,
+    ConversationSource,
+    Label,
+    Message,
+    Page,
+    Source,
+    SourceLabel,
+)
 from app.ingest.pipeline import add_source
 from app.ingest.podglad import render_strony
 from app.ingest.storage import download_bytes
@@ -52,6 +63,9 @@ def _pogrupuj_zrodla(zrodla: list[Source]) -> list[tuple[str | None, list[Source
 
 # Ile wątków pokazujemy w pasku po lewej, zanim pojawi się "Pokaż więcej".
 POKAZ_ROZMOW = 20
+
+# To samo dla listy źródeł.
+POKAZ_ZRODEL = 30
 
 
 def _historia(db: Session, ile: int, biezaca: Conversation | None = None) -> dict:
@@ -385,18 +399,62 @@ def popraw_odpowiedz(
 
 
 @router.get("/zrodla", response_class=HTMLResponse)
-def zrodla(request: Request, blad: str | None = None, db: Session = Depends(get_db)):
-    wszystkie = db.query(Source).order_by(Source.id.desc()).all()
-    liczba_akapitow = {
-        source.id: db.query(Chunk).filter_by(source_id=source.id).count() for source in wszystkie
-    }
+def zrodla(
+    request: Request,
+    blad: str | None = None,
+    szukaj: str = "",
+    etykieta: str | None = None,
+    ile: int = POKAZ_ZRODEL,
+    db: Session = Depends(get_db),
+):
+    """Lista źródeł - szukanie po tytule, zawężenie etykietą, reszta za linkiem.
+
+    Klient zapowiada sześćdziesiąt warzyw, czyli kilkaset książek. Jedna lista
+    ciągiem przestaje być listą - trzeba wiedzieć, czego się szuka, zanim się
+    zacznie przewijać."""
+    ile = max(POKAZ_ZRODEL, min(ile, 500))
+    fraza = szukaj.strip()
+
+    zapytanie = db.query(Source)
+    if fraza:
+        wzorzec = f"%{fraza}%"
+        zapytanie = zapytanie.filter(or_(Source.title.ilike(wzorzec), Source.author.ilike(wzorzec)))
+    if etykieta:
+        zapytanie = zapytanie.join(SourceLabel, SourceLabel.source_id == Source.id).join(
+            Label, Label.id == SourceLabel.label_id
+        ).filter(Label.code == etykieta)
+
+    pasujace = zapytanie.count()
+    wybrane = zapytanie.order_by(Source.id.desc()).limit(ile).all()
+
+    # Jedno zapytanie zamiast COUNT na każde źródło - przy stu książkach to
+    # była setka zapytań na każde wejście na ekran.
+    liczniki = dict(
+        db.query(Chunk.source_id, func.count(Chunk.id)).group_by(Chunk.source_id).all()
+    )
+
+    etykiety = (
+        db.query(Label.code, Label.name, func.count(SourceLabel.source_id))
+        .join(SourceLabel, SourceLabel.label_id == Label.id)
+        .group_by(Label.code, Label.name)
+        .order_by(Label.name)
+        .all()
+    )
+
     return templates.TemplateResponse(
         "zrodla.html",
         {
             "request": request,
             "strona": "zrodla",
-            "zrodla": wszystkie,
-            "liczba_akapitow": liczba_akapitow,
+            "zrodla": wybrane,
+            "liczba_akapitow": liczniki,
+            "wszystkich": db.query(Source).count(),
+            "pasujacych": pasujace,
+            "starsze": max(pasujace - ile, 0),
+            "nastepne": ile + POKAZ_ZRODEL,
+            "szukaj": fraza,
+            "etykieta": etykieta,
+            "etykiety": etykiety,
             "blad": blad,
             **_wspolne(db),
         },

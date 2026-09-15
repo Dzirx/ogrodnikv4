@@ -1,11 +1,25 @@
 {% extends "base.html" %}
 {% block title %}Źródła{% endblock %}
+{% block style %}
+<style>
+  .dodawanie > summary { cursor: pointer; font-weight: 500; padding: 0.3rem 0; }
+  .szukanie { display: flex; gap: 0.5rem; align-items: center; max-width: 34rem; margin-bottom: 0.8rem; }
+  .szukanie .pole { flex: 1; margin: 0; }
+  .etykiety-filtr { display: flex; flex-wrap: wrap; gap: 0.4rem; margin: 0 0 1rem; }
+  .etykiety-filtr .etykieta { text-decoration: none; }
+  .etykiety-filtr .wybrana { background: var(--akcent); color: #fff; }
+</style>
+{% endblock %}
 {% block content %}
-<h1>Źródła</h1>
+<h1>Źródła{% if pasujacych != wszystkich %} <span class="podpowiedz">— {{ pasujacych }} z {{ wszystkich }}</span>{% endif %}</h1>
 
 {% if blad %}<p class="karta" style="border-color: var(--uwaga)">{{ blad }}</p>{% endif %}
 
-<div class="karta" style="max-width: 44rem; margin-bottom: 1.5rem;">
+{# Formularz zwinięty: przy stu książkach ekran służy do szukania, nie do
+   dodawania. Rozwija się jednym kliknięciem i zostaje rozwinięty po błędzie. #}
+<details class="dodawanie" {% if blad %}open{% endif %}>
+  <summary>+ Dodaj źródło</summary>
+  <div class="karta" style="max-width: 44rem; margin: 0.8rem 0 1.5rem;">
   <form method="post" action="/zrodla" enctype="multipart/form-data">
     <div class="pole">
       <label for="tytul">Tytuł</label>
@@ -30,7 +44,26 @@
     </div>
     <button type="submit">Dodaj źródło</button>
   </form>
-</div>
+  </div>
+</details>
+
+<form method="get" action="/zrodla" class="szukanie">
+  <div class="pole"><input type="search" name="szukaj" value="{{ szukaj }}" placeholder="Szukaj po tytule albo autorze"></div>
+  {% if etykieta %}<input type="hidden" name="etykieta" value="{{ etykieta }}">{% endif %}
+  <button type="submit" class="drugorzedny">Szukaj</button>
+  {% if szukaj or etykieta %}<a href="/zrodla" class="podpowiedz">wyczyść</a>{% endif %}
+</form>
+
+{% if etykiety %}
+<p class="etykiety-filtr">
+  <a href="/zrodla{% if szukaj %}?szukaj={{ szukaj }}{% endif %}"
+     class="etykieta{% if not etykieta %} wybrana{% endif %}">wszystkie ({{ wszystkich }})</a>
+  {% for kod, nazwa, ile in etykiety %}
+  <a href="/zrodla?etykieta={{ kod }}{% if szukaj %}&szukaj={{ szukaj }}{% endif %}"
+     class="etykieta{% if etykieta == kod %} wybrana{% endif %}">{{ nazwa }} ({{ ile }})</a>
+  {% endfor %}
+</p>
+{% endif %}
 
 {% if zrodla %}
 <table>
@@ -50,6 +83,11 @@
   </tr>
   {% endfor %}
 </table>
+{% if starsze %}
+<p><a href="/zrodla?ile={{ nastepne }}{% if szukaj %}&szukaj={{ szukaj }}{% endif %}{% if etykieta %}&etykieta={{ etykieta }}{% endif %}">Pokaż więcej ({{ starsze }})</a></p>
+{% endif %}
+{% elif szukaj or etykieta %}
+<p class="pusto">Nic nie pasuje. <a href="/zrodla">Pokaż wszystkie ({{ wszystkich }})</a></p>
 {% else %}
 <p class="pusto">Nie ma jeszcze żadnych źródeł.</p>
 {% endif %}

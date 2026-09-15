@@ -1,9 +1,9 @@
-"""Pasek wątków po lewej rośnie bez końca, jeśli go nie przyciąć.
+"""Listy, które rosną bez końca: wątki po lewej i źródła.
 
 Redaktor zadaje dziesiątki pytań, a szuka zawsze wśród ostatnich. Pokazujemy
 dwadzieścia i link do starszych - bez skryptu, zwykłym adresem."""
 
-from app.api.routes import POKAZ_ROZMOW, _historia
+from app.api.routes import POKAZ_ROZMOW, POKAZ_ZRODEL, _historia, zrodla
 from app.db.base import SessionLocal
 from app.db.models import Conversation
 
@@ -53,5 +53,46 @@ def test_prog_nie_da_sie_zejsc_ponizej_dwudziestu():
     try:
         assert len(_historia(db, 1)["rozmowy"]) <= POKAZ_ROZMOW
         assert _historia(db, 1)["nastepne"] == POKAZ_ROZMOW * 2
+    finally:
+        db.close()
+
+
+class _Zadanie:
+    """Request wystarczający dla tych tras - szablon czyta z niego tylko
+    parametry zapytania."""
+
+    query_params: dict = {}
+
+
+def test_zrodla_bez_filtra_pokazuja_wszystko():
+    db = SessionLocal()
+    try:
+        ctx = zrodla(_Zadanie(), db=db).context
+
+        assert ctx["pasujacych"] == ctx["wszystkich"]
+        assert len(ctx["zrodla"]) == min(ctx["wszystkich"], POKAZ_ZRODEL)
+        assert ctx["starsze"] == max(ctx["wszystkich"] - POKAZ_ZRODEL, 0)
+    finally:
+        db.close()
+
+
+def test_szukanie_zawezaja_liste_ale_licznik_calosci_zostaje():
+    """Nagłówek ma mówić "1 z 60", żeby było widać, że reszta nie zniknęła."""
+    db = SessionLocal()
+    try:
+        wszystkich = zrodla(_Zadanie(), db=db).context["wszystkich"]
+        ctx = zrodla(_Zadanie(), szukaj="na pewno nie ma takiego tytułu", db=db).context
+
+        assert ctx["zrodla"] == []
+        assert ctx["pasujacych"] == 0
+        assert ctx["wszystkich"] == wszystkich
+    finally:
+        db.close()
+
+
+def test_prog_zrodel_nie_da_sie_zejsc_ponizej_domyslnego():
+    db = SessionLocal()
+    try:
+        assert zrodla(_Zadanie(), ile=1, db=db).context["nastepne"] == POKAZ_ZRODEL * 2
     finally:
         db.close()
