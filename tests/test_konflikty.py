@@ -10,7 +10,7 @@ o coś pyta.
 import pytest
 
 import app.answer.konflikty as K
-from app.answer.konflikty import _zbuduj, odcisk, ustalenia_dla, warunek, zachodza_na_siebie
+from app.answer.konflikty import _zbuduj, odcisk, rozstrzygaj_zakresy, ustalenia_dla, warunek, zachodza_na_siebie
 from app.db.base import SessionLocal
 from app.db.models import Chunk, Conflict, ConflictOption, Page, Source
 
@@ -224,3 +224,27 @@ def test_rozstrzygniecie_wraca_przy_akapicie_ktorego_dotyczylo(dwie_ksiazki):
     assert ustalenia[0]["wartosc"] == "5,7"
     assert ustalenia[0]["wlasne"] is True
     assert ustalenia_dla(db, []) == []
+
+
+def test_zdanie_ogolne_i_zdanie_o_wezszym_przypadku_to_nie_spor():
+    """Zgłoszone z panelu: "unikaj podlewania wieczorem" i "w pojemnikach,
+    w upalne dni podlewaj rano i wieczorem" trafiły do zakładki jako spór.
+    Jedno mówi o pojemnikach w upały, drugie o wieczorach w ogóle - obie oceny
+    modelu tego nie wyłapały, więc decyzja należy do kodu."""
+    assert not rozstrzygaj_zakresy("", "w pojemnikach, w upalne dni", ten_sam=False)
+    assert not rozstrzygaj_zakresy("wieczorem", "", ten_sam=False)
+
+
+def test_dwa_rozne_zawezenia_to_nie_spor():
+    assert not rozstrzygaj_zakresy("pod osłonami", "w gruncie", ten_sam=False)
+
+
+def test_ten_sam_zakres_przepuszcza_spor():
+    """Bramka zakresów nie może zabijać prawdziwych sporów: dwa zdania
+    o rozstawie w tunelu różnią się wartością i o to właśnie chodzi."""
+    assert rozstrzygaj_zakresy("w tunelu foliowym", "w tunelu foliowym", ten_sam=True)
+
+
+def test_dwa_zdania_ogolne_przepuszczaja_spor():
+    assert rozstrzygaj_zakresy("", "", ten_sam=False)
+    assert rozstrzygaj_zakresy("brak", "nie dotyczy", ten_sam=False)

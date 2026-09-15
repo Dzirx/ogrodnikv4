@@ -120,14 +120,20 @@ def odcisk(temat: str, wartosci: list[str]) -> str:
 
 SPRAWDZ_PROMPT = """Dostajesz dwa zdania wypisane z dwóch różnych książek ogrodniczych.
 
-Odpowiedz na jedno pytanie: czy ogrodnik musi wybrać jedno albo drugie, bo zastosowanie
-obu naraz jest niemożliwe?
+Najpierw dla KAŻDEGO zdania wypisz zakres, w którym ono obowiązuje: rodzaj uprawy
+(grunt, tunel, pojemnik), pogodę, porę dnia lub roku, fazę rozwoju rośliny, miejsce.
+Bierz to wyłącznie z samego zdania, nie dopowiadaj. Gdy zdanie mówi o zasadzie ogólnej,
+bez żadnego takiego zawężenia, wpisz pusty napis.
+
+Potem powiedz, czy oba zakresy to ten sam przypadek.
+
+Na koniec oceń: czy ogrodnik musi wybrać jedno albo drugie, bo zastosowanie obu naraz
+jest niemożliwe?
 
 Odpowiedz "zgodne", jeśli da się je pogodzić w jakikolwiek sposób. W szczególności:
 - jedno jest ogólne, drugie je doprecyzowuje,
-- jedno podaje warunek, którego drugie nie wyklucza,
 - mówią o różnych rzeczach, etapach albo porach,
-- podają zakresy mające część wspólną,
+- podają zakresy liczbowe mające część wspólną,
 - to ta sama treść innymi słowami,
 - oba zalecenia można spełnić jednocześnie.
 
@@ -138,22 +144,40 @@ Twoim zadaniem jest obalić spór, nie potwierdzić. Przy jakiejkolwiek wątpliw
 _SCHEMA_SPRAWDZ = {
     "type": "object",
     "properties": {
+        "zakres_pierwszego": {"type": "string"},
+        "zakres_drugiego": {"type": "string"},
+        "ten_sam_przypadek": {"type": "boolean"},
         "ocena": {"type": "string", "enum": ["spor", "zgodne"]},
-        "dlaczego": {"type": "string"},
     },
-    "required": ["ocena", "dlaczego"],
+    "required": ["zakres_pierwszego", "zakres_drugiego", "ten_sam_przypadek", "ocena"],
     "additionalProperties": False,
 }
+
+
+def rozstrzygaj_zakresy(zakres_a: str, zakres_b: str, ten_sam: bool) -> bool:
+    """Czy dwa zdania w ogole mowia o tym samym przypadku.
+
+    To reguly kodu, nie zdanie modelu - model podaje same zakresy, decyzja
+    zapada tutaj. Powod jest konkretny: przy podlewaniu obie oceny uznaly za
+    spor "unikaj podlewania wieczorem" i "w pojemnikach, w upalne dni podlewaj
+    rano i wieczorem". Jedno mowi o pojemnikach w upaly, drugie o wieczorach
+    w ogole - to dwa rozne przypadki, a nie sprzecznosc."""
+    a, b = warunek(zakres_a), warunek(zakres_b)
+    # Jedno zdanie ogolne, drugie o wezszym przypadku - to doprecyzowanie.
+    if bool(a) != bool(b):
+        return False
+    # Oba zawezone: musza zawezac do tego samego, inaczej nie ma o co sie sprzeczac.
+    if a and b and not ten_sam:
+        return False
+    return True
 
 
 def naprawde_sprzeczne(cytat_a: str, cytat_b: str) -> bool:
     """Druga, niezalezna ocena - na samych cytatach ze zrodel.
 
-    Pierwsza ocena szuka sporow i znajduje ich za duzo: przy pytaniu o wysadzanie
-    rozsady uznala "po minieciu przymrozkow" i "gdy male prawdopodobienstwo
-    przymrozkow, gleba 12-13 stopni" za spor, choc drugie tylko doprecyzowuje
-    pierwsze. Ta ocena dostaje wylacznie dwa zdania, bez slowa "spor" w pytaniu,
-    i ma je pogodzic. Dopiero gdy obie zgodza sie co do sprzecznosci, pytamy
+    Pierwsza ocena szuka sporow i znajduje ich za duzo. Ta dostaje wylacznie
+    dwa zdania, bez slowa "spor" w pytaniu, i ma je pogodzic. Dopiero gdy obie
+    zgodza sie co do sprzecznosci, a zakresy przejda przez regule kodu, pytamy
     czlowieka."""
     try:
         odpowiedz = _openai.chat.completions.create(
@@ -168,11 +192,19 @@ def naprawde_sprzeczne(cytat_a: str, cytat_b: str) -> bool:
                 "json_schema": {"name": "ocena", "schema": _SCHEMA_SPRAWDZ, "strict": True},
             },
         )
-        return json.loads(odpowiedz.choices[0].message.content).get("ocena") == "spor"
+        wynik = json.loads(odpowiedz.choices[0].message.content)
     except Exception:
         # Brak drugiej oceny znaczy brak sporu - nie pytamy czlowieka na slowo
         # jednego wywolania.
         return False
+
+    if not rozstrzygaj_zakresy(
+        wynik.get("zakres_pierwszego", ""),
+        wynik.get("zakres_drugiego", ""),
+        bool(wynik.get("ten_sam_przypadek")),
+    ):
+        return False
+    return wynik.get("ocena") == "spor"
 
 
 def znajdz_konflikty(db: Session, pytanie: str, fakty: list[dict], by_id: dict[int, Chunk]) -> list[Conflict]:
