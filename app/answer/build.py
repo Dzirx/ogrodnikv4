@@ -1,17 +1,21 @@
-"""Pytanie -> odpowiedz zlozona ze zdan, z ktorych kazde wskazuje swoj akapit.
+"""Pytanie -> odpowiedz, ktorej kazdy kawalek wskazuje swoj akapit w ksiazce.
 
-Podzial pracy, odwrotnie niz w pierwszej wersji:
+MODEL pracuje w dwoch krokach. Najpierw wypisuje fakty z akapitow, ktore zwrocilo
+wyszukiwanie - sama tresc i warunek, przy kazdym cytat. Potem pisze odpowiedz
+z tych faktow i juz NIE WIDZI zdan ze zrodla, wiec nie ma czego przepisac.
+Dopoki pisal prosto z akapitow, ciagnal za soba jezyk ksiazki i zadna liczba
+regul w prompcie tego nie zdjela.
 
-MODEL pisze odpowiedz i przy kazdym zdaniu podaje, z ktorego akapitu je wzial
-i ktory fragment to potwierdza. Nie ma slotow podstawianych do tekstu - model
-pisze liczby wprost, bo cytat i tak zostanie sprawdzony.
+Jednostka tekstu jest KAWALEK zdania, nie zdanie. Model oddaje jeden akapit
+pociety tam, gdzie konczy sie zasieg przypisu - cyferka siada takze w srodku
+zdania. Dopoki prosilismy o tablice zdan, pisal jeden fakt = jedno zdanie
+i odpowiedz wygladala jak wyliczanka, cokolwiek mowil prompt.
 
 KOD sprawdza jedna rzecz: czy podany cytat naprawde wystepuje w tym akapicie.
-Jedno porownanie tekstu, zero kosztu, pewnosc ktorej model nie da. Zdanie,
-ktore tego nie przechodzi, zostaje w odpowiedzi, ale jest widocznie oznaczone -
+Jedno porownanie tekstu, zero kosztu, pewnosc ktorej model nie da. Kawalek,
+ktory tego nie przechodzi, zostaje w odpowiedzi, ale jest widocznie oznaczony -
 tak jak reszta systemu traktuje rzeczy niepewne, zamiast je po cichu ukrywac.
 """
-
 import json
 import re
 
@@ -23,56 +27,6 @@ from app.db.models import Chunk, Page, Source
 from app.search.index import search
 
 _openai = OpenAI(api_key=settings.openai_api_key)
-
-SYSTEM_PROMPT = """Odpowiadasz na pytania o ogrodnictwo wyłącznie na podstawie podanych akapitów ze źródeł.
-
-Pisz po polsku, z pełnymi znakami diakrytycznymi: ą ć ę ł ń ó ś ź ż. Nigdy nie pomijaj ogonków.
-
-Zasady treści:
-- Każde zdanie odpowiedzi musi pochodzić z konkretnego akapitu. Podajesz jego "chunk_id" oraz "quote" — dosłowny fragment tego akapitu.
-- "quote" musi POTWIERDZAĆ to, co napisałeś w "text". Nie wystarczy, że pochodzi z tego samego akapitu i dotyczy podobnego tematu. Jeśli akapit mówi, że niedobór wapnia przy niskim pH powoduje chorobę, to NIE jest potwierdzenie zdania "pomidor lubi glebę lekko kwaśną" — to zupełnie inna informacja.
-- "quote" przepisz znak w znak z akapitu. Nie poprawiaj go, nie skracaj w środku, nie zmieniaj interpunkcji.
-- Nie pisz niczego, czego nie ma w akapitach. Zero własnej wiedzy o ogrodnictwie.
-- Jeśli akapity nie odpowiadają na pytanie, zwróć pustą listę zdań. To jest poprawna odpowiedź, nie porażka. Wyszukiwanie ZAWSZE zwraca jakieś akapity, nawet gdy żaden nie dotyczy pytania — lepiej powiedzieć "nie mam tego w źródłach" niż zlepić odpowiedź z tekstu o czymś innym.
-- Nie wyciągaj wniosków. Jeśli źródło opisuje objawy choroby przy niskim pH, nie przerabiaj tego na zalecenie dotyczące odczynu gleby.
-- Patrz na "poprzedni_fragment" — mówi, z jakiej części książki pochodzi akapit. Jeśli zalecenie dotyczy konkretnego problemu (choroby, szkodnika, zaburzenia), NAPISZ TO WPROST albo pomiń je zupełnie. "Podnieś pH gleby do około 6,0" w rozdziale o suchej zgniliźnie wierzchołkowej to sposób zapobiegania tej chorobie, a nie odpowiedź na pytanie, w jakim pH sadzić pomidory. Dobrze: "Przy suchej zgniliźnie wierzchołkowej podnosi się pH gleby do około 6,0". Źle: "Pomidory najlepiej sadzić w glebie o pH około 6,0".
-
-Zasady języka — materiał czytają dorośli, którzy chcą się czegoś dowiedzieć:
-- Jedno zdanie = jedna myśl. Zdanie powyżej 20 wyrazów rozbij na dwa.
-- Odpowiadaj od razu. Nie zapowiadaj, o czym będziesz pisać, i nie podsumowuj na końcu.
-- Zero doklejek bez treści: "co jest korzystne dla środowiska", "co ma istotne znaczenie", "warto pamiętać, że".
-- Strona czynna i konkretnie: "rozsadę wysiewa się w drugiej połowie marca", nie "zaleca się rozpoczęcie produkcji rozsady od wysiewu nasion".
-- Uważaj na przyimki: "W uprawie gruntowej pomidorów...", nie "Dla uprawy gruntowej pomidorów...".
-- Całość do około dziesięciu zdań. Krócej jest lepiej, jeśli odpowiedź jest pełna.
-
-NAJWAŻNIEJSZE — JĘZYK. Piszesz do ogrodnika, nie do urzędu. Czyta to człowiek starszej daty, który natychmiast wyłapuje sztuczne zdania.
-
-Zakazane konstrukcje:
-- "zalecane jest", "zaleca się", "należy", "powinien/powinno/powinna", "wskazane jest", "rekomenduje się" — zamiast tego pisz wprost: "podłoże ma być żyzne", "gleba jest lekko kwaśna";
-- słowa z języka opracowań fachowych: "preferuje" (powiedz: lubi), "charakteryzuje się", "w przypadku" (powiedz: przy, gdy), "zapewnić odpowiednie warunki" (powiedz: zadbać o);
-- rzeczowniki odczasownikowe tam, gdzie wystarczy czasownik: "produkcja rozsady" zamiast "rozsadę produkuje się", "stosowanie nawożenia" zamiast "nawozi się";
-- zdania zaczynające się od tego, co zostało zalecone, zamiast od rzeczy, o której mowa;
-- kalki z pytania: jeśli pytanie brzmi "w jakim pH najlepiej sadzić", nie zaczynaj odpowiedzi od "najlepiej sadzić w pH".
-
-Tak wygląda ta sama treść powiedziana po ludzku:
-
-Źle:    "Produkcję rozsady pomidorów do uprawy gruntowej należy rozpocząć od wysiewu nasion w drugiej połowie marca."
-Dobrze: "Rozsadę na grunt wysiewa się w drugiej połowie marca."
-
-Źle:    "Zalecane podłoże do siewu pomidorów ma pH 6,0–6,5."
-Dobrze: "Do siewu weź podłoże o pH 6,0–6,5."
-
-Źle:    "Pomidory najlepiej sadzić w glebie o pH około 6,0."
-Dobrze: "Pomidor lubi glebę o odczynie około 6,0."
-
-Źle:    "Zaleca się stosowanie podłoża o odczynie lekko kwaśnym."
-Dobrze: "Pomidor lubi glebę lekko kwaśną."
-
-Źle:    "W tunelach foliowych należy monitorować temperaturę, aby nie przekraczała 30°C."
-Dobrze: "W tunelu pilnuj, żeby temperatura nie przekraczała 30°C."
-
-"quote" ma być dosłownym cytatem ze źródła, ale "text" NIE może być jego kopią ani bliską parafrazą."""
-
 
 ZBIERANIE_PROMPT = """Wypisz fakty, które podane akapity mówią na temat pytania.
 

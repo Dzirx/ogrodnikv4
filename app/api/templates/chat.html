@@ -8,6 +8,7 @@
   jak w NotebookLM.
 #}
 {% macro wybor_zrodel(pogrupowane, wybrane) %}
+<div class="lista-ksiazek">
   {% for etykieta, lista in pogrupowane %}
   <div class="grupa-zrodel">
     {% if etykieta %}
@@ -32,6 +33,7 @@
       });
     });
   </script>
+</div>
 {% endmacro %}
 {% block title %}{% if rozmowa %}{{ rozmowa.title }}{% else %}Pytania{% endif %}{% endblock %}
 {% block style %}
@@ -59,11 +61,13 @@
   .wybor-zrodel { margin-top: 1rem; border-top: 1px solid var(--ramka); padding-top: 0.8rem; }
   .wybor-zrodel > summary { cursor: pointer; color: var(--przygaszony); font-size: 0.9rem; }
   .wybor-zrodel > summary:hover { color: var(--tekst); }
-  .zrodla-wybor { max-height: 16rem; overflow-y: auto; margin-top: 0.6rem; }
+  /* Lista książek przewija się zamiast rosnąć w nieskończoność - przy
+     trzydziestu źródłach rozwinęłaby się na całą stronę. */
+  .wybor-zrodel > .lista-ksiazek { max-height: 16rem; overflow-y: auto; margin-top: 0.6rem; }
   .grupa-zrodel { margin-bottom: 0.6rem; }
   .naglowek-grupy { margin-bottom: 0.2rem; }
   .grupa-zrodel label:not(.naglowek-grupy) { padding-left: 1rem; }
-  .zrodla-wybor label { font-weight: 400; font-size: 0.9rem; display: flex; gap: 0.4rem; align-items: start; }
+  .lista-ksiazek label { font-weight: 400; font-size: 0.9rem; display: flex; gap: 0.4rem; align-items: start; }
   .pytanie { background: var(--akcent); color: #fff; padding: 0.6rem 0.9rem; border-radius: 10px; margin: 0 0 1rem auto; max-width: 85%; width: fit-content; }
   .odpowiedz { margin-bottom: 2rem; }
   .odpowiedz p { margin: 0 0 0.8rem; }
@@ -74,11 +78,6 @@
     padding: 0.15rem 0.5rem; font-size: 0.8rem; border-radius: 4px; margin-right: 0.3rem;
   }
   .ikona:hover { color: var(--tekst); background: var(--tlo); }
-  .tekst-ze-zrodlami { display: grid; grid-template-columns: minmax(0, 1fr) 13rem; gap: 1rem; align-items: start; }
-  .zrodla-obok { border-left: 1px solid var(--ramka); padding-left: 0.8rem; }
-  .zrodlo-wpis { display: flex; gap: 0.4rem; align-items: baseline; text-decoration: none; color: var(--tekst); padding: 0.25rem 0; }
-  .zrodlo-wpis:hover { color: var(--akcent); }
-  .zrodlo-wpis small { line-height: 1.3; }
 
   .okno-edycji {
     border: 1px solid var(--ramka); border-radius: 10px; padding: 1.2rem;
@@ -89,7 +88,6 @@
   .okno-edycji h2 { margin: 0 0 0.8rem; font-size: 1.05rem; }
   .okno-edycji textarea { font: inherit; }
   .przyciski-okna { display: flex; gap: 0.5rem; margin-bottom: 0; }
-  @media (max-width: 900px) { .tekst-ze-zrodlami { grid-template-columns: 1fr; } .zrodla-obok { border-left: 0; padding-left: 0; } }
   .tekst-poprawiony { border-left: 3px solid var(--akcent); padding-left: 0.7rem; }
   .niepotwierdzone { background: var(--uwaga-tlo); border-left: 3px solid var(--uwaga); padding-left: 0.6rem; }
   .znacznik {
@@ -101,7 +99,6 @@
   .akapit-zrodla { background: var(--tlo); padding: 0.8rem; border-radius: 6px; font-size: 0.95rem; }
   .akapit-zrodla mark { background: #ffe680; padding: 0 0.1rem; }
   .podglad-strona { width: 100%; border: 1px solid var(--ramka); border-radius: 4px; }
-  .cytat { font-style: italic; color: var(--przygaszony); border-left: 2px solid var(--ramka); padding-left: 0.7rem; margin: 0.5rem 0; }
   .brak-w-zrodle { color: var(--uwaga); }
   .czekam { color: var(--przygaszony); font-style: italic; }
   @media (max-width: 1100px) { .uklad, .uklad.bez-podgladu { grid-template-columns: 1fr; } }
