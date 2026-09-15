@@ -164,15 +164,19 @@ kawałki i tak ma być — to nie są osobne zdania.
 Kawałek zaczynający się w środku zdania zaczyna się od spacji albo od znaku
 przestankowego. Inaczej słowa się skleją.
 
-Każdy kawałek podaje numery faktów, na których stoi. Jeśli następny kawałek nadal stoi
-na tym samym fakcie, powtórz ten numer. Kawałek bez numeru to kawałek bez pokrycia
-w książce — takiego nie wolno napisać.
+Kawałek, który cokolwiek mówi, podaje numery faktów, na których stoi. Jeśli następny
+kawałek nadal stoi na tym samym fakcie, powtórz ten numer.
+
+Kawałek bez numerów też jest dozwolony, ale WYŁĄCZNIE jako spoiwo: przecinek, myślnik,
+spójnik. ", a", " — ", ". Za to". Nic więcej. W spoiwie nie wolno podać żadnej liczby
+ani nazwać żadnej rzeczy — pierwsze słowo niosące treść musi stać w kawałku z numerem.
 
 Przykład dla faktów 0: "podlewać 2-3 razy w tygodniu, w czasie kwitnienia",
 1: "częściej w upały i pod osłonami", 2: "lać pod krzew, nie moczyć liści":
 
   {"tekst": "Podlewaj 2-3 razy w tygodniu, a w upały i pod osłonami częściej", "fakty": [0, 1]}
-  {"tekst": " — zawsze pod krzew, nigdy na liście.", "fakty": [2]}
+  {"tekst": " — ", "fakty": []}
+  {"tekst": "zawsze pod krzew, nigdy na liście.", "fakty": [2]}
 
 Zwróć uwagę: trzy fakty dały jedno zdanie, nie trzy.
 
@@ -455,6 +459,25 @@ def _napisz_z_faktow(question: str, fakty: list[dict]) -> dict:
     return {"czesci": czesci}
 
 
+# Slowa, z ktorych wolno zlozyc kawalek bez przypisu. Kawalek bez pokrycia
+# w ksiazce ma prawo istniec tylko jako spoiwo miedzy dwoma, ktore pokrycie
+# maja - inaczej wymuszalibysmy, zeby kazdy kawalek byl samodzielna porcja
+# faktu, a wtedy model tnie wylacznie na granicy zdania i odpowiedz znowu
+# wyglada jak wyliczanka. Lista jest zamknieta celowo: przez te furtke nie ma
+# wejsc zadna tresc, wiec nie ma tu ani jednego slowa nazywajacego rzecz.
+_SPOIWO = {
+    "a", "i", "oraz", "ale", "lecz", "za", "to", "natomiast", "zaś", "zas",
+    "choć", "choc", "chociaż", "chociaz", "bo", "więc", "wiec", "też", "tez",
+    "także", "takze", "czyli", "jednak", "tylko", "nie", "przy", "tym",
+}
+
+
+def jest_spoiwem(tekst: str) -> bool:
+    """Czy kawalek bez przypisu jest samym spoiwem, bez wlasnej tresci."""
+    slowa = re.findall(r"\w+", tekst.lower(), flags=re.UNICODE)
+    return all(slowo in _SPOIWO for slowo in slowa)
+
+
 # Przed tymi znakami nie stawiamy spacji przy sklejaniu kawalkow.
 BEZ_SPACJI = ',.;:!?…)»"\''
 
@@ -488,12 +511,16 @@ def _verify(raw: dict, by_id: dict, pages: dict, sources: dict) -> dict:
                 }
             )
 
+        tekst = item.get("text", "")
+        spoiwo = not zrodla and jest_spoiwem(tekst)
         czesci.append(
             {
-                "text": item.get("text", ""),
-                # Kawalek bez zrodla to kawalek bez pokrycia - traktujemy go
-                # tak samo jak zmyslony cytat.
-                "verified": bool(zrodla) and all(z["verified"] for z in zrodla),
+                "text": tekst,
+                # Samo spoiwo niczego nie twierdzi, wiec nie ma w nim czego
+                # sprawdzac. Kawalek bez przypisu, ktory JEDNAK cos mowi,
+                # traktujemy tak samo jak zmyslony cytat.
+                "verified": spoiwo or (bool(zrodla) and all(z["verified"] for z in zrodla)),
+                "spoiwo": spoiwo,
                 "sources": zrodla,
                 "styl": [],
             }

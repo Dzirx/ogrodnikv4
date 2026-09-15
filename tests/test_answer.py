@@ -94,3 +94,23 @@ def test_sklejone_kawalki_daja_jeden_akapit():
     assert sklej(czesci) == (
         "Podlewaj 2-3 razy w tygodniu — zawsze pod krzew. Najlepsza jest deszczówka, nie woda z kranu."
     )
+
+
+def test_spoiwo_bez_przypisu_jest_dozwolone():
+    """Kawałek bez przypisu ma prawo istnieć tylko jako spoiwo. Bez tej furtki
+    każdy kawałek musiał być samodzielną porcją faktu, więc model ciął
+    wyłącznie na granicy zdania i odpowiedź wyglądała jak wyliczanka."""
+    from app.answer.build import jest_spoiwem
+
+    assert jest_spoiwem(" — ")
+    assert jest_spoiwem(", a ")
+    assert jest_spoiwem(". Za to ")
+
+
+def test_tresc_bez_przypisu_spoiwem_nie_jest():
+    """Przez tę furtkę nie ma wejść nic, co cokolwiek twierdzi."""
+    from app.answer.build import jest_spoiwem
+
+    assert not jest_spoiwem(", a w upały częściej")
+    assert not jest_spoiwem("zawsze pod krzew")
+    assert not jest_spoiwem(" — 2-3 razy w tygodniu")
