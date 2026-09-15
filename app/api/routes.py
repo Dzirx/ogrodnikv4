@@ -49,22 +49,26 @@ def bez_powtorzen(zrodla: list[int]) -> list[int]:
     return list(dict.fromkeys(zrodla))
 
 
-def _pogrupuj_zrodla(zrodla: list[Source]) -> list[tuple[str | None, list[Source]]]:
-    """Źródła w grupach po etykietach, żeby dało się zaznaczyć temat naraz.
+def _pogrupuj_zrodla(zrodla: list[Source]) -> list[tuple[str | None, list[dict]]]:
+    """Źródła w grupach po etykietach, każde pokazane RAZ.
 
-    Źródło z kilkoma etykietami trafia do każdej z nich - tak jak książka o
-    pomidorze i bioróżnorodności jest przydatna przy obu tematach. Źródła bez
-    etykiety idą na koniec, bez nagłówka."""
-    grupy: dict[str, list[Source]] = {}
-    bez_etykiety: list[Source] = []
+    Książka z dwiema etykietami stała wcześniej w dwóch grupach i wyglądało to
+    na dwie pozycje. Gorzej: odznaczenie jednej kopii niczego nie zmieniało, bo
+    druga trzymała książkę w zakresie - trzeba było znaleźć obie.
+
+    Teraz książka stoi pod pierwszą swoją etykietą, a pozostałe widać obok
+    tytułu. Źródła bez etykiety idą na koniec, bez nagłówka."""
+    grupy: dict[str, list[dict]] = {}
+    bez_etykiety: list[dict] = []
     for zrodlo in zrodla:
-        if zrodlo.labels:
-            for etykieta in zrodlo.labels:
-                grupy.setdefault(etykieta.name, []).append(zrodlo)
+        etykiety = sorted(e.name for e in zrodlo.labels)
+        wpis = {"zrodlo": zrodlo, "pozostale": etykiety[1:]}
+        if etykiety:
+            grupy.setdefault(etykiety[0], []).append(wpis)
         else:
-            bez_etykiety.append(zrodlo)
+            bez_etykiety.append(wpis)
 
-    wynik: list[tuple[str | None, list[Source]]] = sorted(grupy.items())
+    wynik: list[tuple[str | None, list[dict]]] = sorted(grupy.items())
     if bez_etykiety:
         wynik.append((None, bez_etykiety))
     return wynik

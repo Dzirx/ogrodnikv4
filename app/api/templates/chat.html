@@ -16,9 +16,11 @@
       <input type="checkbox" class="zaznacz-grupe"> <strong>{{ etykieta }}</strong>
     </label>
     {% endif %}
-    {% for z in lista %}
-    <label><input type="checkbox" name="zrodla" value="{{ z.id }}"
-      {% if wybrane is none or not wybrane or z in wybrane %}checked{% endif %}> {{ z.title }}</label>
+    {% for wpis in lista %}
+    <label><input type="checkbox" name="zrodla" value="{{ wpis.zrodlo.id }}"
+      {% if wybrane is none or not wybrane or wpis.zrodlo in wybrane %}checked{% endif %}>
+      <span>{{ wpis.zrodlo.title }}{% if wpis.pozostale %}
+        <small class="podpowiedz">· {{ wpis.pozostale | join(", ") }}</small>{% endif %}</span></label>
     {% endfor %}
   </div>
   {% endfor %}
@@ -56,8 +58,14 @@
   .kolumna > .tresc, .kolumna > .watki { overflow-y: auto; min-height: 0; }
   .kolumna > .przewijana { flex: 1; }
   .stopka-rozmowy { border-top: 1px solid var(--ramka); padding: 0.8rem 1rem; background: var(--karta); border-radius: 0 0 8px 8px; }
-  .stopka-rozmowy form { display: flex; gap: 0.5rem; align-items: center; }
-  .stopka-rozmowy .pole { flex: 1; margin: 0; }
+  .stopka-rozmowy form { display: flex; gap: 0.5rem; align-items: flex-end; }
+  /* max-width ze szkieletu przycinalo pole do 42rem, przez co konczylo sie
+     w polowie kolumny. Tutaj ma zajac cala szerokosc. */
+  .stopka-rozmowy .pole { flex: 1; margin: 0; max-width: none; }
+  /* min-height ze szkieletu (6rem) jest dla dlugich pol formularzy, nie dla
+     pola pytania - tutaj zaczyna od jednej linijki i rosnie z tekstem. */
+  .stopka-rozmowy textarea { resize: none; overflow-y: auto; min-height: 0; max-height: 9rem; line-height: 1.4; }
+  .stopka-rozmowy button { white-space: nowrap; }
   .stopka-rozmowy .wybor-zrodel { margin-top: 0.6rem; border-top: 0; padding-top: 0; }
   .watki { list-style: none; margin: 0; padding: 0; }
   .starsze-watki a { color: var(--przygaszony); font-size: 0.85rem; }
@@ -152,7 +160,7 @@
         zobaczysz, z której strony pochodzi.</p>
         <form method="post" action="/pytania">
           <div class="pole">
-            <input type="text" name="pytanie" placeholder="np. kiedy wysiewać rozsadę pomidora?" required autofocus>
+            <textarea name="pytanie" rows="2" placeholder="np. kiedy wysiewać rozsadę pomidora? — albo: napisz artykuł o uprawie w tunelu" required autofocus></textarea>
           </div>
           <details class="wybor-zrodel">
             <summary>Pytaj o: wszystkie książki ({{ zrodla|length }})</summary>
@@ -264,7 +272,10 @@
     {% if rozmowa %}
     <div class="stopka-rozmowy">
       <form method="post" action="/rozmowy/{{ rozmowa.id }}/pytania">
-        <div class="pole"><input type="text" name="pytanie" placeholder="Zadaj kolejne pytanie" required autofocus></div>
+        {# Pole rosnie z tekstem: polecenia w rodzaju "napisz artykul o..." nie
+           mieszcza sie w jednej linijce, a przewijanie w waskim okienku jest
+           nie do czytania. Enter wysyla, Shift+Enter robi nowa linie. #}
+        <div class="pole"><textarea name="pytanie" rows="1" placeholder="Zadaj kolejne pytanie" required autofocus></textarea></div>
         <button type="submit">Wyślij</button>
       </form>
 
@@ -277,12 +288,14 @@
           {%- if rozmowa.sources %} {{ rozmowa.sources|length }} z {{ zrodla|length }} książek
           {%- else %} wszystkich książek ({{ zrodla|length }}){% endif %}
         </summary>
-        <form method="post" action="/rozmowy/{{ rozmowa.id }}/zrodla">
+        {# Zaznaczenie zapisuje sie samo, chwile po ostatnim kliknieciu - bez
+           przycisku. Przycisk zostaje dla przegladarki bez skryptu, ale skrypt
+           go chowa. #}
+        <form method="post" action="/rozmowy/{{ rozmowa.id }}/zrodla" class="zakres-rozmowy">
           {{ wybor_zrodel(pogrupowane, rozmowa.sources) }}
-          <p>
-            <button type="submit" class="drugorzedny">Zmień zakres</button>
-            <span class="podpowiedz">Dotyczy kolejnych pytań.</span>
-          </p>
+          {# Przycisk zostaje dla przegladarki bez skryptu; skrypt go chowa,
+             bo zaznaczenie zapisuje sie samo. #}
+          <p><button type="submit" class="drugorzedny">Zapisz zakres</button></p>
         </form>
       </details>
     </div>
@@ -323,6 +336,35 @@
 </div>
 
 <script>
+  // Zakres rozmowy zapisuje sie po zaznaczeniu, bez przycisku. Z opoznieniem,
+  // zeby zaznaczenie kilku ksiazek pod rzad nie przeladowywalo strony za kazdym
+  // kliknieciem.
+  document.querySelectorAll('form.zakres-rozmowy').forEach(function (formularz) {
+    var przycisk = formularz.querySelector('button[type="submit"]');
+    if (przycisk) { przycisk.hidden = true; }
+    var zegar = null;
+    formularz.addEventListener('change', function () {
+      clearTimeout(zegar);
+      zegar = setTimeout(function () { formularz.requestSubmit(); }, 700);
+    });
+  });
+
+  // Pole pytania rosnie z tekstem i wysyla Enterem. Shift+Enter to nowa linia.
+  document.querySelectorAll('.stopka-rozmowy textarea').forEach(function (pole) {
+    function dopasuj() {
+      pole.style.height = 'auto';
+      pole.style.height = pole.scrollHeight + 'px';
+    }
+    pole.addEventListener('input', dopasuj);
+    pole.addEventListener('keydown', function (zdarzenie) {
+      if (zdarzenie.key === 'Enter' && !zdarzenie.shiftKey) {
+        zdarzenie.preventDefault();
+        if (pole.value.trim()) { pole.form.requestSubmit(); }
+      }
+    });
+    dopasuj();
+  });
+
   // Rozmowa otwiera sie na ostatniej wiadomosci, nie na pierwszej. Okno
   // przewija sie samo, wiec bez tego po wejsciu w dlugi watek widac pytanie
   // sprzed godziny.
