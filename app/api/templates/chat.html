@@ -74,7 +74,22 @@
     padding: 0.15rem 0.5rem; font-size: 0.8rem; border-radius: 4px; margin-right: 0.3rem;
   }
   .ikona:hover { color: var(--tekst); background: var(--tlo); }
-  .edycja textarea { font: inherit; }
+  .tekst-ze-zrodlami { display: grid; grid-template-columns: minmax(0, 1fr) 13rem; gap: 1rem; align-items: start; }
+  .zrodla-obok { border-left: 1px solid var(--ramka); padding-left: 0.8rem; }
+  .zrodlo-wpis { display: flex; gap: 0.4rem; align-items: baseline; text-decoration: none; color: var(--tekst); padding: 0.25rem 0; }
+  .zrodlo-wpis:hover { color: var(--akcent); }
+  .zrodlo-wpis small { line-height: 1.3; }
+
+  .okno-edycji {
+    border: 1px solid var(--ramka); border-radius: 10px; padding: 1.2rem;
+    width: min(42rem, 92vw); background: var(--karta); color: var(--tekst);
+    box-shadow: 0 8px 30px rgba(0,0,0,0.2);
+  }
+  .okno-edycji::backdrop { background: rgba(0,0,0,0.35); }
+  .okno-edycji h2 { margin: 0 0 0.8rem; font-size: 1.05rem; }
+  .okno-edycji textarea { font: inherit; }
+  .przyciski-okna { display: flex; gap: 0.5rem; margin-bottom: 0; }
+  @media (max-width: 900px) { .tekst-ze-zrodlami { grid-template-columns: 1fr; } .zrodla-obok { border-left: 0; padding-left: 0; } }
   .tekst-poprawiony { border-left: 3px solid var(--akcent); padding-left: 0.7rem; }
   .uwagi-jezyka > summary { cursor: pointer; color: var(--przygaszony); font-size: 0.85rem; }
   .uwagi-jezyka ul { margin: 0.4rem 0 0; padding-left: 1.2rem; font-size: 0.85rem; color: var(--przygaszony); }
@@ -151,18 +166,24 @@
                  linijce, nawet gdy tekst był spójny. Znacznik źródła idzie
                  zaraz za zdaniem, w indeksie górnym - tak jak przypis. #}
               {% if w.edited_text %}
-              {# Tekst poprawiony recznie - pokazujemy go zamiast zdan od
-                 modelu. Zrodla zostaja pod spodem, bo tresc nadal na nich sie
-                 opiera, tylko powiedziana po mysli redaktora. #}
-              <p class="tekst-poprawiony">{{ w.edited_text }}</p>
-              {# Kazde zrodlo raz, nawet gdy kilka zdan opieralo sie na tym samym.
-                 Przy poprawionym tekscie zdania juz nie istnieja osobno, wiec
-                 lista numerow bez odduplikowania wygladala jak "1 1 2 2 3 2". #}
-              <p class="podpowiedz">Źródła:
-                {% for wpis in w.answer_json.sources %}
-                <a class="znacznik" href="?podglad={{ wpis.chunk_id }}" title="{{ wpis.source_title }}, strona {{ wpis.page }}">{{ wpis.marker }}</a>
-                {%- endfor %}
-              </p>
+              {# Tekst poprawiony recznie - pokazujemy go zamiast zdan od modelu.
+                 Zrodla ida OBOK tekstu, nie pod spodem: po edycji nie da sie
+                 przypisac ich do konkretnych zdan, ale redaktor ma je miec w
+                 zasiegu wzroku, a nie szukac ich nizej. #}
+              <div class="tekst-ze-zrodlami">
+                <p class="tekst-poprawiony">{{ w.edited_text }}</p>
+                <aside class="zrodla-obok">
+                  <span class="podpowiedz">Źródła</span>
+                  {# Kazde raz, nawet gdy kilka zdan opieralo sie na tym samym
+                     akapicie - lista wygladala jak "1 1 2 2 3 2". #}
+                  {% for wpis in w.answer_json.sources %}
+                  <a class="zrodlo-wpis" href="?podglad={{ wpis.chunk_id }}">
+                    <span class="znacznik">{{ wpis.marker }}</span>
+                    <small>{{ wpis.source_title }}, s. {{ wpis.page }}</small>
+                  </a>
+                  {% endfor %}
+                </aside>
+              </div>
               {% else %}
               <p>
                 {%- for zdanie in w.answer_json.sentences -%}
@@ -190,14 +211,19 @@
                 {% if w.edited_text %}<small class="podpowiedz">poprawione ręcznie</small>{% endif %}
               </p>
 
-              <form class="edycja" id="edycja-{{ w.id }}" method="post"
-                    action="/rozmowy/{{ rozmowa.id }}/wiadomosci/{{ w.id }}" hidden>
-                <textarea name="tekst" rows="6">{{ w.edited_text or (w.answer_json.sentences | map(attribute="text") | join(" ")) }}</textarea>
-                <p>
-                  <button type="submit">Zapisz</button>
-                  <span class="podpowiedz">Puste pole przywraca wersję z modelu.</span>
-                </p>
-              </form>
+              {# Okno modalne, nie formularz pod spodem. Natywny <dialog> daje
+                 zamykanie Escape'em i przyciemnione tlo bez wlasnego kodu. #}
+              <dialog class="okno-edycji" id="edycja-{{ w.id }}">
+                <form method="post" action="/rozmowy/{{ rozmowa.id }}/wiadomosci/{{ w.id }}">
+                  <h2>Popraw odpowiedź</h2>
+                  <textarea name="tekst" rows="10">{{ w.edited_text or (w.answer_json.sentences | map(attribute="text") | join(" ")) }}</textarea>
+                  <p class="podpowiedz">Puste pole przywraca wersję z modelu. Źródła zostaną bez zmian.</p>
+                  <p class="przyciski-okna">
+                    <button type="submit">Zapisz</button>
+                    <button type="button" class="drugorzedny" data-zamknij="edycja-{{ w.id }}">Anuluj</button>
+                  </p>
+                </form>
+              </dialog>
             </div>
           {% endif %}
         {% endfor %}
@@ -280,9 +306,23 @@
 
   document.querySelectorAll('[data-edytuj]').forEach(function (przycisk) {
     przycisk.addEventListener('click', function () {
-      var formularz = document.getElementById(przycisk.dataset.edytuj);
-      formularz.hidden = !formularz.hidden;
-      if (!formularz.hidden) { formularz.querySelector('textarea').focus(); }
+      var okno = document.getElementById(przycisk.dataset.edytuj);
+      okno.showModal();
+      okno.querySelector('textarea').focus();
+    });
+  });
+
+  document.querySelectorAll('[data-zamknij]').forEach(function (przycisk) {
+    przycisk.addEventListener('click', function () {
+      document.getElementById(przycisk.dataset.zamknij).close();
+    });
+  });
+
+  // Klikniecie w przyciemnione tlo zamyka okno - tak dziala wiekszosc okien,
+  // wiec redaktor tego oczekuje.
+  document.querySelectorAll('.okno-edycji').forEach(function (okno) {
+    okno.addEventListener('click', function (zdarzenie) {
+      if (zdarzenie.target === okno) { okno.close(); }
     });
   });
 </script>
