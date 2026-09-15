@@ -54,8 +54,9 @@ def test_normalizacja_laczy_rozne_mysniki():
     assert normalize("22–28") == normalize("22-28")
 
 
-def test_gdy_model_zawiedzie_zostaje_pytanie_i_krotka_odpowiedz(monkeypatch):
-    """Gorsze wyszukiwanie jest lepsze niż brak odpowiedzi."""
+def test_gdy_model_zawiedzie_forme_widac_po_slowach(monkeypatch):
+    """Gorsze wyszukiwanie jest lepsze niż brak odpowiedzi - a "napisz artykuł"
+    nie może przepaść tylko dlatego, że wywołanie rozpoznające padło."""
     import app.answer.build as build
 
     class Zepsuty:
@@ -72,7 +73,12 @@ def test_gdy_model_zawiedzie_zostaje_pytanie_i_krotka_odpowiedz(monkeypatch):
         "forma": "odpowiedz",
         "o_uprawie": True,
         "temat": "",
+        "ile_slow": None,
     }
+
+    zapasowe = build.zrozum_pytanie([], "napisz mi artykuł na 1000 słów o tunelach")
+    assert zapasowe["forma"] == "material"
+    assert zapasowe["ile_slow"] == 1000
 
 
 def test_forma_skaluje_zakres_wyszukiwania():
@@ -193,12 +199,18 @@ def test_twierdzenie_bez_pokrycia_wypada():
     assert do_usuniecia({"twierdzi": True, "wynika": False, "warunek": True, "co_nie_pasuje": "dopisana przyczyna"})
 
 
-def test_zgubiony_warunek_wypada():
+def test_zgubiony_warunek_oznacza_zamiast_usuwac():
     """Fakt "pod osłonami podlewać częściej" zamieniony na "podlewaj częściej"
-    wprowadza w błąd, choć każde słowo pochodzi ze źródła."""
-    from app.answer.kontrola import do_usuniecia
+    wprowadza w błąd, ale usuwanie za to okazało się za ostre: w jednym
+    przebiegu wyleciały cztery zdania, w tym poprawne, i tekst zaczynał się
+    w połowie myśli. Błąd warunku jest częściej pomyłką oceniającego niż błędem
+    tekstu, a kosztuje cały akapit."""
+    from app.answer.kontrola import do_oznaczenia, do_usuniecia
 
-    assert do_usuniecia({"twierdzi": True, "wynika": True, "warunek": False, "co_nie_pasuje": "zgubione osłony"})
+    zgubiony = {"twierdzi": True, "wynika": True, "warunek": False, "co_nie_pasuje": "zgubione osłony"}
+
+    assert not do_usuniecia(zgubiony)
+    assert do_oznaczenia(zgubiony)
 
 
 def test_zdania_skladane_z_kawalkow_po_znaku_konca():
@@ -218,3 +230,33 @@ def test_zdania_skladane_z_kawalkow_po_znaku_konca():
     assert zdania[0]["indeksy"] == [0, 1, 2]
     assert zdania[0]["fakty"] == ["podlewać 2-3 razy w tygodniu", "w upały częściej"]
     assert zdania[1]["fakty"] == []
+
+
+def test_forma_po_slowach_rozpoznaje_wszystkie_rodzaje():
+    from app.answer.build import forma_po_slowach
+
+    assert forma_po_slowach("napisz artykuł o tunelach") == "material"
+    assert forma_po_slowach("wrzuć posta na fb") == "post"
+    assert forma_po_slowach("wypisz punktami czym nawozić") == "lista"
+    assert forma_po_slowach("rozpisz to dokładniej") == "rozwiniecie"
+    assert forma_po_slowach("w jakim pH sadzić pomidory?") == "odpowiedz"
+
+
+def test_dlugosc_z_polecenia():
+    from app.answer.build import zadana_dlugosc
+
+    assert zadana_dlugosc("napisz na 1000 słów") == 1000
+    assert zadana_dlugosc("artykuł około 500 slow") == 500
+    assert zadana_dlugosc("jak podlewać pomidory?") is None
+
+
+def test_naprawa_szwow_moze_tylko_skracac():
+    """Cała gwarancja tego kroku: skoro naprawa tylko usuwa słowa, nie da się
+    przy zszywaniu wprowadzić nowej treści."""
+    from app.answer.kontrola import tylko_skrocone
+
+    assert tylko_skrocone("Dlatego pomidory rosną lepiej.", "Pomidory rosną lepiej.")
+    assert tylko_skrocone("Te dwa sposoby są skuteczne.", "sposoby są skuteczne")
+    assert tylko_skrocone("cokolwiek", "")
+    assert not tylko_skrocone("Pomidory rosną lepiej.", "Pomidory rosną lepiej i szybciej.")
+    assert not tylko_skrocone("Pomidory rosną lepiej.", "Lepiej rosną pomidory."), "kolejność też się liczy"

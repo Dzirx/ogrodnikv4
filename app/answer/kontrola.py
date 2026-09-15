@@ -108,12 +108,22 @@ def sprawdz_zdania(zdania: list[dict]) -> dict[int, dict]:
 def do_usuniecia(ocena: dict) -> bool:
     """Czy zdanie wypada z tekstu.
 
-    Decyzja kodu, nie modelu: wypada zdanie, ktore COS TWIERDZI i albo nie
-    wynika z faktow, albo gubi ich warunek. Zdanie, ktore niczego nie twierdzi,
-    zostaje - i o to chodzilo, zeby tekst mogl miec przejscia."""
+    Decyzja kodu, nie modelu: wypada zdanie, ktore COS TWIERDZI i nie wynika
+    z podanych faktow. Zdanie, ktore niczego nie twierdzi, zostaje - o to
+    chodzilo, zeby tekst mogl miec przejscia.
+
+    Zgubiony warunek NIE usuwa zdania, tylko je oznacza. Pierwsza wersja
+    usuwala i w jednym przebiegu wycielo cztery zdania, w tym poprawne -
+    tekst zaczynal sie w polowie mysli. Blad warunku jest czesciej pomylka
+    oceniajacego niz bledem tekstu, a kosztuje caly akapit."""
     if not ocena.get("twierdzi"):
         return False
-    return not ocena.get("wynika", True) or not ocena.get("warunek", True)
+    return not ocena.get("wynika", True)
+
+
+def do_oznaczenia(ocena: dict) -> bool:
+    """Zdanie zostaje, ale z adnotacja - zgubiony warunek zrodla."""
+    return bool(ocena.get("twierdzi")) and not ocena.get("warunek", True)
 
 
 REALIZACJA_PROMPT = """Dostajesz gotowy tekst i listę zagadnień, które miał obejmować.
@@ -158,3 +168,96 @@ def sprawdz_realizacje(tekst: str, zagadnienia: list[str]) -> list[str]:
     except Exception:
         return []
     return [z for z in pominiete if z in zagadnienia]
+
+
+SZWY_PROMPT = """Z tekstu usunięto zdania, które nie miały pokrycia w książkach. Zostały
+po nich szwy: spójnik odwołujący się do czegoś, czego już nie ma ("Dlatego…", "Z tego
+powodu…"), podsumowanie zdania, które wypadło, albo zdanie zaczynające się od "Te dwa
+sposoby", choć został jeden.
+
+Dostajesz kawałki tekstu z numerami i listę usuniętych zdań. Wskaż kawałki do poprawienia.
+
+WOLNO CI WYŁĄCZNIE SKRACAĆ. Każde słowo, które zostawisz, musi stać w oryginalnym kawałku,
+w tej samej kolejności. Nie wolno dopisać ani jednego słowa — nawet spójnika, nawet "i".
+Poprawka, która cokolwiek dodaje, zostanie odrzucona przez program.
+
+Kawałek do usunięcia w całości oddaj z pustym tekstem.
+
+Nie ruszaj kawałków, które czytają się dobrze. Zwykle poprawki wymaga jeden, najwyżej dwa."""
+
+_SCHEMA_SZWY = {
+    "type": "object",
+    "properties": {
+        "poprawki": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {"nr": {"type": "integer"}, "tekst": {"type": "string"}},
+                "required": ["nr", "tekst"],
+                "additionalProperties": False,
+            },
+        }
+    },
+    "required": ["poprawki"],
+    "additionalProperties": False,
+}
+
+
+def _slowa(tekst: str) -> list[str]:
+    import re
+
+    return re.findall(r"\w+", tekst.lower(), flags=re.UNICODE)
+
+
+def tylko_skrocone(stare: str, nowe: str) -> bool:
+    """Czy poprawka wylacznie skraca - kazde slowo stalo w oryginale, po kolei.
+
+    To jest cala gwarancja tego kroku. Skoro naprawa moze tylko usuwac slowa,
+    nie da sie przy zszywaniu wprowadzic nowej tresci - i nie trzeba sprawdzac
+    poprawionych zdan drugi raz."""
+    zostale = _slowa(nowe)
+    oryginal = _slowa(stare)
+    pozycja = 0
+    for slowo in zostale:
+        try:
+            pozycja = oryginal.index(slowo, pozycja) + 1
+        except ValueError:
+            return False
+    return True
+
+
+def zszyj(czesci: list[dict], usuniete: list[str]) -> dict[int, str]:
+    """Poprawki szwow po usunietych zdaniach. Numer kawalka -> nowy tekst.
+
+    Poprawki, ktore cokolwiek dodaja, sa odrzucane w kodzie."""
+    if not usuniete or not czesci:
+        return {}
+    do_oceny = [{"nr": numer, "tekst": c.get("text", "")} for numer, c in enumerate(czesci)]
+    try:
+        odpowiedz = _openai.chat.completions.create(
+            model=settings.analysis_model,
+            temperature=0,
+            messages=[
+                {"role": "system", "content": SZWY_PROMPT},
+                {
+                    "role": "user",
+                    "content": json.dumps({"kawalki": do_oceny, "usuniete": usuniete}, ensure_ascii=False),
+                },
+            ],
+            response_format={"type": "json_schema", "json_schema": {"name": "szwy", "schema": _SCHEMA_SZWY, "strict": True}},
+        )
+        poprawki = json.loads(odpowiedz.choices[0].message.content).get("poprawki", [])
+    except Exception:
+        return {}
+
+    przyjete: dict[int, str] = {}
+    for poprawka in poprawki:
+        numer = poprawka.get("nr")
+        if not isinstance(numer, int) or not 0 <= numer < len(czesci):
+            continue
+        nowy = (poprawka.get("tekst") or "").strip()
+        stary = czesci[numer].get("text", "")
+        if nowy and not tylko_skrocone(stary, nowy):
+            continue
+        przyjete[numer] = nowy
+    return przyjete

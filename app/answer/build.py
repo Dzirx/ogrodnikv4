@@ -24,8 +24,8 @@ from openai import OpenAI
 
 from app.answer.cytaty import normalize, quote_is_in_chunk
 from app.answer.konflikty import ustalenia_dla, znajdz_konflikty
-from app.answer.kontrola import do_usuniecia, sprawdz_realizacje, sprawdz_zdania
-from app.answer.plan import zaplanuj
+from app.answer.kontrola import do_oznaczenia, do_usuniecia, sprawdz_realizacje, sprawdz_zdania, zszyj
+from app.answer.plan import powiedz_inaczej, zaplanuj
 from app.config import settings
 from app.db.base import SessionLocal
 from app.db.models import Chunk, Page, Source
@@ -362,6 +362,35 @@ FORMY = {
 }
 
 
+# Slowa, po ktorych forme widac bez pytania modelu. Uzywane, gdy wywolanie
+# padnie - inaczej "napisz artykul" leci jako zwykla odpowiedz i nikt sie nie
+# dowiaduje, ze polecenie zostalo zignorowane.
+_FORMA_PO_SLOWACH = [
+    ("material", ("artykul", "artykuł", "material", "materiał", "poradnik", "rozdzial", "rozdział", "opracowanie")),
+    ("post", ("post", "facebook", "fb", "wpis")),
+    ("lista", ("wypisz", "punktami", "lista", "wylicz")),
+    ("rozwiniecie", ("rozpisz", "wiecej szczegol", "więcej szczegół", "dokladniej", "dokładniej", "rozwin", "rozwiń")),
+]
+
+# "na 1000 slow", "okolo 500 slow" - liczba podana wprost w poleceniu.
+_ILE_SLOW = re.compile(r"(\d{2,5})\s*(?:slow|słów|slowa|słowa|wyraz)", re.IGNORECASE)
+
+
+def forma_po_slowach(pytanie: str) -> str:
+    """Forma rozpoznana z samego polecenia, bez modelu."""
+    male = pytanie.lower()
+    for forma, slowa in _FORMA_PO_SLOWACH:
+        if any(slowo in male for slowo in slowa):
+            return forma
+    return "odpowiedz"
+
+
+def zadana_dlugosc(pytanie: str) -> int | None:
+    """Liczba slow podana wprost w poleceniu, jesli jest."""
+    trafienie = _ILE_SLOW.search(pytanie)
+    return int(trafienie.group(1)) if trafienie else None
+
+
 def zrozum_pytanie(historia: list[tuple[str, str]], pytanie: str) -> dict:
     """Co pytajacy chce dostac - jedno wywolanie na wejsciu.
 
@@ -393,13 +422,22 @@ def zrozum_pytanie(historia: list[tuple[str, str]], pytanie: str) -> dict:
         )
         wynik = json.loads(odpowiedz.choices[0].message.content)
     except Exception:
-        return {"pytanie": pytanie, "forma": "odpowiedz", "o_uprawie": True, "temat": ""}
+        # Bez modelu forme widac po slowach polecenia. Gorzej niz z modelem,
+        # ale "napisz artykul" nie przepadnie.
+        return {
+            "pytanie": pytanie,
+            "forma": forma_po_slowach(pytanie),
+            "o_uprawie": True,
+            "temat": "",
+            "ile_slow": zadana_dlugosc(pytanie),
+        }
 
     return {
         "pytanie": (wynik.get("pytanie") or "").strip() or pytanie,
         "forma": wynik.get("forma", "odpowiedz"),
         "o_uprawie": bool(wynik.get("o_uprawie", True)),
         "temat": (wynik.get("temat") or "").strip(),
+        "ile_slow": zadana_dlugosc(pytanie),
     }
 
 
@@ -501,6 +539,10 @@ RAZEM_KSIAZEK = 6
 # to zwykle zdanie wyrwane z innego tematu.
 MIN_FAKTOW_NA_ZAGADNIENIE = 2
 
+# Ile zagadnien warto doszukiwac. Kazde to osobne wyszukiwanie i ponowne
+# czytanie ksiazek - przy siedmiu brakach odpowiedz rosla do kilku minut.
+MAX_DOSZUKIWAN = 3
+
 
 def zagadnienia_z_pokryciem(
     zagadnienia: list[str], fakty: list[dict], znalezione_dla: dict[str, set[int]]
@@ -582,11 +624,47 @@ def answer_question(
         if not fakty:
             return _no_data()
 
-        zagadnienia = zagadnienia_z_pokryciem(zagadnienia, fakty, znalezione_dla)
+        maja_pokrycie = zagadnienia_z_pokryciem(zagadnienia, fakty, znalezione_dla)
+        brakujace = [z for z in zagadnienia if z not in maja_pokrycie]
+        if brakujace:
+            # Druga runda: zagadnienie moze byc w ksiazce pod innym slowem
+            # ("ogławianie" zamiast "obcinanie czubkow"). Dopiero gdy i to nie
+            # trafi, zagadnienie wypada z planu.
+            # Najwyzej trzy zagadnienia i wezszy zakres: druga runda to pelne
+            # zbieranie faktow od nowa, wiec przy siedmiu brakach potrafila
+            # wydluzyc odpowiedz z minuty do szesciu.
+            inaczej = powiedz_inaczej(brakujace[:MAX_DOSZUKIWAN])
+            dodatkowe = [f for lista in inaczej.values() for f in lista]
+            if dodatkowe:
+                wiecej, by_id2, pages2, sources2, znalezione2 = zbierz_fakty_do_pytania(
+                    db, pytanie, source_ids, na_ksiazke=4, zagadnienia=dodatkowe
+                )
+                znane = {(f.get("chunk_id"), f.get("tresc")) for f in fakty}
+                fakty.extend(f for f in wiecej if (f.get("chunk_id"), f.get("tresc")) not in znane)
+                by_id.update(by_id2)
+                pages.update(pages2)
+                sources.update(sources2)
+                # Trafienia z zamiennika licza sie na konto zagadnienia, ktore
+                # zastapil - inaczej pokrycie nadal wyszloby zerowe.
+                for zagadnienie, zamienniki in inaczej.items():
+                    for zamiennik in zamienniki:
+                        znalezione_dla.setdefault(zagadnienie, set()).update(
+                            znalezione2.get(zamiennik, set())
+                        )
+                maja_pokrycie = zagadnienia_z_pokryciem(zagadnienia, fakty, znalezione_dla)
+        zagadnienia = maja_pokrycie
 
         do_pisania = przytnij_fakty(fakty, by_id, forma["faktow"])
+        jak = forma["jak"]
+        if zrozumienie.get("ile_slow"):
+            # Liczba z polecenia jest celem, nie nakazem - o gornej granicy i tak
+            # decyduja fakty, a doklejanie waty do liczby juz raz tu bylo.
+            jak += (
+                f" Poproszono o około {zrozumienie['ile_slow']} słów — pisz w tę stronę,"
+                " ale ani jednego zdania ponad to, co mówią fakty."
+            )
         raw = _napisz_z_faktow(
-            pytanie, do_pisania, ustalenia_dla(db, list(by_id)), forma["jak"], zagadnienia
+            pytanie, do_pisania, ustalenia_dla(db, list(by_id)), jak, zagadnienia
         )
         raw, usuniete = po_kontroli(raw, do_pisania)
         odpowiedz = _verify(raw, by_id, pages, sources)
@@ -872,13 +950,26 @@ def po_kontroli(raw: dict, fakty: list[dict]) -> tuple[dict, list[str]]:
         if do_usuniecia(ocena):
             wyrzucone.update(zdanie["indeksy"])
             powody.append(zdanie["tekst"].strip())
+        elif do_oznaczenia(ocena):
+            for indeks in zdanie["indeksy"]:
+                czesci[indeks]["bez_warunku"] = ocena.get("co_nie_pasuje", "")
         elif not ocena.get("twierdzi"):
             # Zdanie przejsciowe - nie potrzebuje przypisu i nie ma byc
             # oznaczone jako niepotwierdzone.
             for indeks in zdanie["indeksy"]:
                 czesci[indeks]["przejscie"] = True
 
-    raw["czesci"] = [c for numer, c in enumerate(czesci) if numer not in wyrzucone]
+    zostale = [c for numer, c in enumerate(czesci) if numer not in wyrzucone]
+
+    # Po usunieciu zostaja szwy: "Dlatego..." bez tego, co bylo przedtem.
+    # Naprawa moze tylko skracac, wiec nie wprowadzi nowej tresci - dlatego
+    # poprawionych zdan nie trzeba sprawdzac drugi raz.
+    if powody and zostale:
+        for numer, nowy in zszyj(zostale, powody).items():
+            zostale[numer]["text"] = nowy
+        zostale = [c for c in zostale if c.get("text", "").strip() or c.get("zrodla")]
+
+    raw["czesci"] = zostale
     return raw, powody
 
 

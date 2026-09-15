@@ -65,3 +65,65 @@ def zaplanuj(pytanie: str, forma: str) -> list[str]:
         # Bez planu tekst i tak powstanie - z jednego wyszukiwania, jak dotad.
         return []
     return [z.strip() for z in zagadnienia if z and z.strip()][:MAX_ZAGADNIEN]
+
+
+INACZEJ_PROMPT = """Dostajesz zagadnienia, których nie udało się znaleźć w książkach
+ogrodniczych. Dla każdego podaj DWA inne sformułowania, którymi książka mogłaby o tym pisać.
+
+Zasady:
+- Węziej i konkretniej niż oryginał. "Nawożenie pomidorów" to za szeroko — "dawka nawozu
+  azotowego dla pomidora", "pogłówne zasilanie pomidorów" trafi lepiej.
+- Używaj słów z języka ogrodniczego, nie potocznego: "ogławianie" zamiast "obcinanie
+  czubków", "rozstawa" zamiast "odległość między roślinami".
+- Nie powtarzaj oryginału ani drugiego sformułowania tego samego zagadnienia."""
+
+_SCHEMA_INACZEJ = {
+    "type": "object",
+    "properties": {
+        "zamienniki": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "zagadnienie": {"type": "string"},
+                    "inaczej": {"type": "array", "items": {"type": "string"}},
+                },
+                "required": ["zagadnienie", "inaczej"],
+                "additionalProperties": False,
+            },
+        }
+    },
+    "required": ["zamienniki"],
+    "additionalProperties": False,
+}
+
+
+def powiedz_inaczej(zagadnienia: list[str]) -> dict[str, list[str]]:
+    """Inne sformulowania zagadnien, ktorych nie udalo sie znalezc.
+
+    Zagadnienie bez pokrycia wypadalo od razu. Czesto jednak ksiazka o tym pisze,
+    tylko innym slowem - "ogławianie" zamiast "obcinanie czubkow". Druga runda
+    wyszukiwania kosztuje jedno wywolanie taniego modelu na caly plan."""
+    if not zagadnienia:
+        return {}
+    try:
+        odpowiedz = _openai.chat.completions.create(
+            model=settings.analysis_model,
+            temperature=0,
+            messages=[
+                {"role": "system", "content": INACZEJ_PROMPT},
+                {"role": "user", "content": json.dumps({"zagadnienia": zagadnienia}, ensure_ascii=False)},
+            ],
+            response_format={
+                "type": "json_schema",
+                "json_schema": {"name": "inaczej", "schema": _SCHEMA_INACZEJ, "strict": True},
+            },
+        )
+        zamienniki = json.loads(odpowiedz.choices[0].message.content).get("zamienniki", [])
+    except Exception:
+        return {}
+    return {
+        z["zagadnienie"]: [i.strip() for i in z.get("inaczej", []) if i and i.strip()][:2]
+        for z in zamienniki
+        if z.get("zagadnienie") in zagadnienia
+    }
