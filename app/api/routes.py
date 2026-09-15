@@ -282,18 +282,22 @@ def _rozbij_na_cytat(akapit: str, cytat: str) -> list[dict]:
 
 
 def _uprosc(tekst: str) -> str:
+    """Do szukania cytatu w akapicie - bez żadnych białych znaków.
+
+    Ta sama zasada co przy weryfikacji: odstęp nie jest treścią. Dopóki
+    porównywaliśmy ze spacjami, cytat zapisany przed poprawką odczytu PDF-a
+    ("p rzekomposto wany kom post") przechodził weryfikację, ale nie dawał się
+    podświetlić - odnośnik otwierał stronę i nic na niej nie zaznaczał."""
     tekst = tekst.replace("\u2013", "-").replace("\u2014", "-").replace("\u00a0", " ")
-    return re.sub(r"\s+", " ", tekst).strip().lower()
+    return re.sub(r"\s+", "", tekst).lower()
 
 
 def _granice_w_oryginale(akapit: str, pozycja: int, dlugosc: int) -> tuple[int, int] | None:
-    """Przelicza pozycję z tekstu uproszczonego na indeksy w oryginale."""
+    """Przelicza pozycję z tekstu bez odstępów na indeksy w oryginale."""
     licznik = 0
     poczatek = koniec = None
-    poprzedni_bialy = True
     for indeks, znak in enumerate(akapit):
-        bialy = znak.isspace()
-        if bialy and poprzedni_bialy:
+        if znak.isspace():
             continue
         if licznik == pozycja and poczatek is None:
             poczatek = indeks
@@ -301,7 +305,6 @@ def _granice_w_oryginale(akapit: str, pozycja: int, dlugosc: int) -> tuple[int, 
             koniec = indeks
             break
         licznik += 1
-        poprzedni_bialy = bialy
     if poczatek is None:
         return None
     return poczatek, (koniec if koniec is not None else len(akapit))

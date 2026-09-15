@@ -39,3 +39,18 @@ def test_cytat_spoza_akapitu_zostawia_tekst_bez_zmian():
 
 def test_brak_cytatu_zwraca_caly_akapit():
     assert _rozbij_na_cytat(AKAPIT, "") == [{"tekst": AKAPIT, "cytat": False}]
+
+
+def test_cytat_z_rozsypanymi_odstepami_nadal_sie_podswietla():
+    """Cytaty zapisane przed poprawką odczytu PDF-a mają spacje w środku
+    wyrazów. Weryfikacja je przepuszcza, więc podświetlenie też musi - inaczej
+    odnośnik otwiera stronę i nic na niej nie zaznacza."""
+    akapit = "Wprowadź do gleby dobrze przekompostowany kompost w ilości około 3-5 kg na metr kwadratowy."
+    cytat = "dobrze p rzekomposto wany kom post w ilośc i ok oło 3-5 kg"
+
+    czesci = _rozbij_na_cytat(akapit, cytat)
+
+    assert any(c["cytat"] for c in czesci)
+    zaznaczone = "".join(c["tekst"] for c in czesci if c["cytat"])
+    assert "przekompostowany kompost" in zaznaczone
+    assert "3-5 kg" in zaznaczone
