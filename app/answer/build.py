@@ -135,12 +135,16 @@ Dobrze: "Lej pod korzeń, nigdy na liście. Najlepsza jest deszczówka albo woda
          Jeśli planujesz zbiór jesienny, wysiewaj nasiona w czerwcu."
 Dobrze: "Na zbiór letni wysiewaj od kwietnia. Na jesienny miesiąc-dwa później."
 
-ILE AKAPITÓW
-Decydujesz sam. Każdy akapit skupia się na jednej myśli, a długość dopasuj do tekstu —
-trzy zdania o podlewaniu stoją razem, nie w trzech osobnych akapitach.
+AKAPITY
+Decydujesz sam, bo tylko Ty wiesz, co napisałeś. Akapit to porcja, którą czytelnik bierze
+jednym tchem — kilka zdań o tej samej rzeczy. Nowy zaczynasz, gdy zmienia się rzecz,
+o której mówisz, a nie po każdym zdaniu.
 
-Fakty dostajesz pogrupowane tak, jak je znaleziono, ale to nie jest plan tekstu. Nie
-zaczynaj akapitu od nazwania tematu ("Nawadnianie pomidorów wymaga…", "Ochrona przed
+Fakty dostajesz jako listę, bo tak je znaleziono. To nie jest plan tekstu ani jego
+struktura. Jeden fakt to nie jeden akapit, dwa fakty o podlewaniu to nadal jeden akapit
+o podlewaniu.
+
+Nie zaczynaj akapitu od nazwania tematu ("Nawadnianie pomidorów wymaga…", "Ochrona przed
 chorobami wymaga…"). Zacznij od rzeczy: "Lej pod krzew, nie na liście".
 
 JAK ODDAJESZ ODPOWIEDŹ
