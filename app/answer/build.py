@@ -55,7 +55,11 @@ Dla każdego faktu podaj:
 Zasady:
 - Tylko to, co jest w akapitach. Zero własnej wiedzy.
 - Tylko to, co dotyczy pytania. Akapit o czymś innym pomiń.
-- Jeśli żaden akapit nie odpowiada na pytanie, zwróć pustą listę."""
+- Akapit, który dotyczy tematu choćby częściowo, daje fakt. Nie odrzucaj go dlatego,
+  że nie odpowiada na pytanie w całości — od składania odpowiedzi jest kto inny.
+- Pustą listę zwracasz WYŁĄCZNIE wtedy, gdy żaden z podanych akapitów nie mówi nic
+  na ten temat. To rzadki przypadek: akapity zostały już wybrane pod to pytanie,
+  więc zwykle mówią o nim sporo."""
 
 
 PISANIE_PROMPT = """Piszesz dla Anielskich Ogrodów. Ktoś zadał pytanie, a Ty odpowiadasz —
@@ -259,101 +263,135 @@ _SCHEMA_ODPOWIEDZ = {
 # Ile ostatnich wiadomosci wystarczy, zeby zrozumiec pytanie doprecyzowujace.
 OKNO_HISTORII = 4
 
-_PRZEPISZ_PROMPT = """Przepisz ostatnie pytanie tak, żeby było zrozumiałe bez historii rozmowy,
-i oceń, ile treści oczekuje pytający.
+_ZROZUM_PROMPT = """Dostajesz ostatnie wiadomości rozmowy i nowe polecenie. Zrozum, o co chodzi.
 
-Przepisanie:
-- Zwróć samo przepisane pytanie, bez komentarza.
-- Uzupełnij brakujący podmiot z historii: "a jak w tunelu?" po pytaniu o wysiew pomidora
-  to "wysiew pomidora w tunelu".
-- Pytanie zaczynające się od "a", "no a", "to jak" albo samo dopowiadające warunek
+Zwróć cztery rzeczy.
+
+"pytanie" — to samo polecenie, ale zrozumiałe bez historii rozmowy.
+- Uzupełnij brakujący podmiot: "a jak w tunelu?" po pytaniu o wysiew pomidora to
+  "wysiew pomidora w tunelu".
+- Polecenie zaczynające się od "a", "no a", "to jak" albo dopowiadające sam warunek
   ("a w gruncie?", "a zimą?") ZAWSZE dotyczy poprzedniego tematu. Wstaw ten temat,
-  nawet jeśli pytanie wygląda na zrozumiałe samo z siebie - dla wyszukiwania nie jest.
-- Gdy pytanie prosi o więcej na temat, o którym już była mowa ("rozpisz to", "potrzebuję
-  więcej szczegółów"), przepisane pytanie MUSI zachować tamten temat. To jest pogłębienie
-  poprzedniej odpowiedzi, nie nowe pytanie.
-- Nie dodawaj treści, której w rozmowie nie ma. Nie odpowiadaj na pytanie.
+  nawet jeśli wygląda na zrozumiałe samo z siebie — dla wyszukiwania nie jest.
+- Gdy ktoś prosi o więcej na temat, o którym już była mowa ("rozpisz to", "więcej
+  szczegółów"), zachowaj tamten temat. To pogłębienie, nie nowe pytanie.
+- Nie dodawaj treści, której w rozmowie nie ma. Nie odpowiadaj.
 
-Głębokość:
-- "krotka" — pytanie o konkret: "w jakim pH sadzić pomidory", "kiedy wysiewać rozsadę".
-- "wiecej" — prośba o rozwinięcie: "rozpisz to", "potrzebuję więcej szczegółów",
-  "a co jeszcze", "opisz dokładniej".
-- "material" — prośba o tekst do czytania, nie o odpowiedź: "napisz artykuł",
-  "przygotuj materiał", "zrób poradnik", "opisz szeroko temat"."""
+"forma" — czego oczekuje piszący:
+- "odpowiedz" — pyta o konkret: "w jakim pH sadzić pomidory", "kiedy wysiewać rozsadę".
+- "rozwiniecie" — prosi o więcej na temat, który już padł: "rozpisz to", "opisz dokładniej".
+- "material" — chce tekst do czytania: "napisz artykuł", "przygotuj materiał", "poradnik".
+- "post" — chce wpis na Facebooka albo krótki tekst do mediów społecznościowych.
+- "lista" — chce wyliczenie: "wypisz punktami", "jakie są sposoby na", "lista odmian".
 
-_SCHEMA_PYTANIE = {
+"o_uprawie" — czy to w ogóle dotyczy uprawy roślin, ogrodu albo czegokolwiek, o czym mogą
+pisać książki ogrodnicze. Fałsz TYLKO wtedy, gdy na pewno nie: pogoda w Zakopanem, kurs euro,
+pytanie o sam program. Przy jakiejkolwiek wątpliwości prawda — lepiej poszukać na darmo niż
+odprawić pytającego z kwitkiem.
+
+"temat" — jednym słowem albo dwoma, czego dotyczy. Dla porządku w rozmowie."""
+
+_SCHEMA_ZROZUM = {
     "type": "object",
     "properties": {
         "pytanie": {"type": "string"},
-        "glebokosc": {"type": "string", "enum": ["krotka", "wiecej", "material"]},
+        "forma": {
+            "type": "string",
+            "enum": ["odpowiedz", "rozwiniecie", "material", "post", "lista"],
+        },
+        "o_uprawie": {"type": "boolean"},
+        "temat": {"type": "string"},
     },
-    "required": ["pytanie", "glebokosc"],
+    "required": ["pytanie", "forma", "o_uprawie", "temat"],
     "additionalProperties": False,
 }
 
-# Ile akapitow z kazdej ksiazki i ile faktow do pisania - zaleznie od tego,
-# o co poproszono. Do tej pory obie liczby byly stale, a prompt konczyl sie
-# zdaniem "odpowiadaj krotko": prosba o artykul i prosba o wiecej szczegolow
-# nie mialy jak niczego zmienic.
-GLEBOKOSC = {
-    "krotka": {"na_ksiazke": 6, "faktow": 12},
-    "wiecej": {"na_ksiazke": 10, "faktow": 22},
-    "material": {"na_ksiazke": 14, "faktow": 36},
+# Ile akapitow z kazdej ksiazki, ile faktow do pisania i jak ma wygladac tekst.
+# Jedno miejsce na wszystkie formy - klient nie zapowie z gory, czy chce
+# odpowiedz, artykul czy wpis na Facebooka, a program ma to obsluzyc tak samo.
+FORMY = {
+    "odpowiedz": {
+        "na_ksiazke": 6,
+        "faktow": 12,
+        "jak": "Odpowiadaj krótko. Kilka zdań wystarczy. Jeden akapit.",
+    },
+    "rozwiniecie": {
+        "na_ksiazke": 10,
+        "faktow": 22,
+        "jak": (
+            "Rozwiń temat: jeden albo dwa akapity po cztery, pięć zdań. Nowy akapit"
+            " zaczynasz, gdy przechodzisz do innej rzeczy."
+        ),
+    },
+    "material": {
+        "na_ksiazke": 14,
+        "faktow": 36,
+        "jak": (
+            "To ma być materiał do czytania, nie odpowiedź na pytanie. Cztery do sześciu"
+            " akapitów po cztery, pięć zdań, każdy o czym innym — przygotowanie, termin,"
+            " prowadzenie, kłopoty. Nie zapowiadaj na początku i nie streszczaj na końcu."
+            " Jeden akapit to kilka faktów, a nie jeden rozciągnięty na pięć zdań."
+        ),
+    },
+    "post": {
+        "na_ksiazke": 8,
+        "faktow": 14,
+        "jak": (
+            "To ma być wpis na Facebooka. Trzy do sześciu zdań, jeden akapit, ton taki jak"
+            " w próbkach wyżej. Zacznij od rzeczy, nie od zapowiedzi. Bez emotek, bez"
+            " hasztagów, bez wołania o komentarze."
+        ),
+    },
+    "lista": {
+        "na_ksiazke": 10,
+        "faktow": 20,
+        "jak": (
+            "To ma być wyliczenie. Każdy punkt w osobnym akapicie (ustaw \"nowy_akapit\"),"
+            " jedno albo dwa zdania, zaczynaj od myślnika. Bez wstępu i bez podsumowania."
+        ),
+    },
 }
 
-_DLUGOSC = {
-    "krotka": "Odpowiadaj krótko. Kilka zdań wystarczy. Jeden akapit.",
-    "wiecej": (
-        "Rozwiń temat: jeden albo dwa akapity po cztery, pięć zdań. Nowy akapit zaczynasz,"
-        " gdy przechodzisz do innej rzeczy."
-    ),
-    "material": (
-        "To ma być materiał do czytania, nie odpowiedź na pytanie. Cztery do sześciu akapitów,"
-        " każdy po cztery, pięć zdań, każdy o czym innym — przygotowanie, termin, prowadzenie,"
-        " kłopoty. Nie streszczaj na końcu i nie zapowiadaj na początku, po prostu pisz."
-        " Masz na to kilkadziesiąt faktów: jeden akapit to kilka z nich, a nie jeden"
-        " rozciągnięty na pięć zdań."
-    ),
-}
 
+def zrozum_pytanie(historia: list[tuple[str, str]], pytanie: str) -> dict:
+    """Co pytajacy chce dostac - jedno wywolanie na wejsciu.
 
-def zrozum_pytanie(historia: list[tuple[str, str]], pytanie: str) -> tuple[str, str]:
-    """Pytanie zrozumiale bez historii rozmowy i oczekiwana glebokosc odpowiedzi.
+    Robi trzy rzeczy naraz, bo wszystkie wymagaja tego samego kontekstu:
+    przepisuje pytanie tak, zeby dalo sie go szukac, rozpoznaje FORME (klient nie
+    zapowie, czy chce odpowiedz, artykul czy wpis na Facebooka) i odsiewa pytania
+    spoza dziedziny, zanim zaplacimy za wyszukiwanie i czytanie ksiazek.
 
-    Bez przepisania "a w tunelu?" nie ma czego szukac - wyszukiwanie dostaje trzy
-    slowa bez podmiotu. Bez glebokosci kazda odpowiedz wychodzila tak samo dluga,
-    a "potrzebuje wiecej szczegolow" dawalo MNIEJ niz poprzednia: pytanie szlo
-    do wyszukiwania jako nowe i trafialo gorzej.
-
-    To krok WYSZUKIWANIA, nie redagowania: nie dotyka zasady, ze tresc odpowiedzi
-    pochodzi wylacznie ze zrodel. Gdy sie nie powiedzie, zostaje oryginalne
-    pytanie i krotka odpowiedz."""
-    if not historia:
-        zapis = f"Pytanie: {pytanie}"
-    else:
-        zapis = "\n".join(
-            f"{'Pytanie' if rola == 'user' else 'Odpowiedź'}: {tekst}"
-            for rola, tekst in historia[-OKNO_HISTORII:]
-        ) + f"\nPytanie: {pytanie}"
+    Gdy sie nie powiedzie, zostaje oryginalne pytanie i zwykla odpowiedz -
+    gorsze wyszukiwanie jest lepsze niz brak odpowiedzi."""
+    zapis = "\n".join(
+        f"{'Pytanie' if rola == 'user' else 'Odpowiedź'}: {tekst}"
+        for rola, tekst in (historia or [])[-OKNO_HISTORII:]
+    )
+    zapis = (zapis + "\n" if zapis else "") + f"Polecenie: {pytanie}"
 
     try:
         odpowiedz = _openai.chat.completions.create(
             model=settings.analysis_model,
             temperature=0,
             messages=[
-                {"role": "system", "content": _PRZEPISZ_PROMPT},
+                {"role": "system", "content": _ZROZUM_PROMPT},
                 {"role": "user", "content": zapis},
             ],
             response_format={
                 "type": "json_schema",
-                "json_schema": {"name": "pytanie", "schema": _SCHEMA_PYTANIE, "strict": True},
+                "json_schema": {"name": "zrozumienie", "schema": _SCHEMA_ZROZUM, "strict": True},
             },
         )
         wynik = json.loads(odpowiedz.choices[0].message.content)
     except Exception:
-        return pytanie, "krotka"
+        return {"pytanie": pytanie, "forma": "odpowiedz", "o_uprawie": True, "temat": ""}
 
-    return (wynik.get("pytanie") or "").strip() or pytanie, wynik.get("glebokosc", "krotka")
+    return {
+        "pytanie": (wynik.get("pytanie") or "").strip() or pytanie,
+        "forma": wynik.get("forma", "odpowiedz"),
+        "o_uprawie": bool(wynik.get("o_uprawie", True)),
+        "temat": (wynik.get("temat") or "").strip(),
+    }
 
 
 def zbierz_fakty_do_pytania(
@@ -395,11 +433,31 @@ def zbierz_fakty_do_pytania(
             for chunk in (by_id[cid] for cid in chunk_ids if cid in by_id)
         ]
 
+    def z_jednej_ksiazki(chunk_ids: list[int]) -> list[dict]:
+        """Fakty z jednej ksiazki, z jedna powtorka i bez prawa wywrocenia reszty.
+
+        Wywolanie potrafi wrocic puste, choc te same akapity wywolane jeszcze raz
+        daja kilkanascie faktow. Wyszukiwanie jest powtarzalne co do akapitu,
+        wiec to model czasem wybiera latwe wyjscie i oddaje pusta liste. Stad
+        trzy podejscia; dopiero trzecie puste znaczy, ze ksiazka naprawde nic
+        na ten temat nie mowi.
+
+        Blad jednej ksiazki nie moze zabrac odpowiedzi z pozostalych."""
+        akapity = kontekst(chunk_ids)
+        for podejscie in (1, 2, 3):
+            try:
+                wynik = _zbierz_fakty(pytanie, akapity)
+            except Exception:
+                wynik = []
+            if wynik:
+                return wynik
+        return []
+
     # Rownolegle, bo przy kilkunastu ksiazkach czekanie po kolei robi z tego
     # minuty. Kazde wywolanie dotyczy jednej ksiazki i jest male.
     fakty: list[dict] = []
     with ThreadPoolExecutor(max_workers=RAZEM_KSIAZEK) as pula:
-        for wynik in pula.map(lambda ids: _zbierz_fakty(pytanie, kontekst(ids)), per_ksiazka.values()):
+        for wynik in pula.map(z_jednej_ksiazki, per_ksiazka.values()):
             fakty.extend(wynik)
     return fakty, by_id, pages, sources
 
@@ -408,87 +466,33 @@ def zbierz_fakty_do_pytania(
 # nie obliczenia.
 RAZEM_KSIAZEK = 6
 
-# Domyslna liczba faktow do pisania. Przy prosbie o material rosnie - patrz
-# GLEBOKOSC.
-MAX_FAKTOW = 12
 
-SEDZIA_PROMPT = """Dostajesz pytanie i fakty wypisane z kilku książek ogrodniczych.
-Wybierz te, z których należy napisać odpowiedź.
+def przytnij_fakty(fakty: list[dict], by_id: dict, ile: int) -> list[dict]:
+    """Tyle faktow, ile zmiesci sie w tekscie - po rowno z kazdej ksiazki.
 
-Zostawiasz fakt, gdy wprost odpowiada na zadane pytanie.
+    Byl tu osobny krok: model ocenial kazdy fakt i wybieral najlepsze. Wypadl,
+    bo niewiele wnosil, a wnosil wlasna awarie - z czterdziestu trzech faktow
+    zostawial pietnascie przy limicie trzydziestu szesciu i artykul wychodzil
+    pusty. Fakty sa juz zebrane pod to jedno pytanie i ustawione w kolejnosci
+    trafnosci, wiec wystarczy ucinac.
 
-Odrzucasz fakt, gdy:
-- mówi o czymś innym niż pytanie, choćby był z tej samej dziedziny,
-- powtarza to, co inny wybrany fakt już mówi tymi samymi słowami.
-
-Czego NIE WOLNO Ci odrzucić:
-- faktu, który podaje INNĄ wartość niż fakt już wybrany. Dwie książki mogą się różnić
-  i to jest informacja, nie usterka. Zostaw oba.
-- faktu, który dotyczy innych warunków uprawy niż pozostałe. To nie powtórzenie.
-
-Nie oszczędzaj. Zostaw WSZYSTKIE fakty dotyczące pytania, aż do liczby "ile_najwyzej" -
-o długości tekstu decyduje kto inny, Ty tylko odsiewasz to, co jest o czymś innym. Odrzucenie
-faktu, który pasuje do pytania, jest gorsze niż zostawienie jednego za dużo.
-
-Zwróć numery wybranych faktów, najważniejsze najpierw."""
-
-_SCHEMA_SEDZIA = {
-    "type": "object",
-    "properties": {"wybrane": {"type": "array", "items": {"type": "integer"}}},
-    "required": ["wybrane"],
-    "additionalProperties": False,
-}
-
-
-def wybierz_fakty(
-    pytanie: str, fakty: list[dict], sources: dict, by_id: dict, ile: int = MAX_FAKTOW
-) -> list[dict]:
-    """Ktore z zebranych faktow ida do odpowiedzi.
-
-    Krok osobny od zbierania, bo zbieranie ma byc szerokie, a odpowiedz krotka.
-    Wczesniej robil to limit akapitow w wyszukiwaniu i dlatego jedno psulo
-    drugie: zawezenie pod krotka odpowiedz odbieralo glos ksiazkom."""
+    Bierzemy na zmiane po jednym z kazdej ksiazki, zeby przyciecie nie wycielo
+    calej ksiazki - a o tym, ktore z nich wejda do zdania, decyduje juz model
+    piszacy."""
     if len(fakty) <= ile:
         return fakty
 
-    do_oceny = [
-        {
-            "nr": numer,
-            "tresc": fakt.get("tresc", ""),
-            "warunek": fakt.get("warunek", ""),
-            "ksiazka": sources[by_id[fakt["chunk_id"]].source_id].title
-            if fakt.get("chunk_id") in by_id
-            else "",
-        }
-        for numer, fakt in enumerate(fakty)
-    ]
-    try:
-        odpowiedz = _openai.chat.completions.create(
-            model=settings.analysis_model,
-            temperature=0,
-            messages=[
-                {"role": "system", "content": SEDZIA_PROMPT},
-                {
-                    "role": "user",
-                    "content": json.dumps(
-                        {"pytanie": pytanie, "ile_najwyzej": ile, "fakty": do_oceny},
-                        ensure_ascii=False,
-                    ),
-                },
-            ],
-            response_format={
-                "type": "json_schema",
-                "json_schema": {"name": "wybor", "schema": _SCHEMA_SEDZIA, "strict": True},
-            },
-        )
-        wybrane = json.loads(odpowiedz.choices[0].message.content).get("wybrane", [])
-    except Exception:
-        # Gdy sedzia nie odpowie, bierzemy poczatek listy - gorsza odpowiedz
-        # jest lepsza niz brak odpowiedzi.
-        return fakty[:ile]
+    kolejki: dict[int, list[dict]] = {}
+    for fakt in fakty:
+        chunk = by_id.get(fakt.get("chunk_id"))
+        kolejki.setdefault(chunk.source_id if chunk else 0, []).append(fakt)
 
-    numery = [n for n in wybrane if isinstance(n, int) and 0 <= n < len(fakty)]
-    return [fakty[n] for n in dict.fromkeys(numery)][:ile] or fakty[:ile]
+    wynik: list[dict] = []
+    while len(wynik) < ile and any(kolejki.values()):
+        for kolejka in kolejki.values():
+            if kolejka and len(wynik) < ile:
+                wynik.append(kolejka.pop(0))
+    return wynik
 
 
 def answer_question(
@@ -496,28 +500,43 @@ def answer_question(
     source_ids: list[int] | None = None,
     historia: list[tuple[str, str]] | None = None,
 ) -> dict:
-    """Zwraca odpowiedz gotowa do pokazania: kawalki tekstu z cytatami i zrodla."""
-    do_wyszukania, glebokosc = zrozum_pytanie(historia or [], question)
-    miara = GLEBOKOSC.get(glebokosc, GLEBOKOSC["krotka"])
+    """Cztery etapy: zrozum, przeszukaj, napisz, sprawdz.
+
+    Forma tekstu wychodzi z pierwszego etapu, nie z ustawien: klient nie
+    zapowiada, czy chce odpowiedz na pytanie, artykul czy wpis na Facebooka.
+    Program ma to obsluzyc tak samo, z jedyna przewaga - kazda liczba w tekscie
+    ma pokrycie w ksiazce."""
+    zrozumienie = zrozum_pytanie(historia or [], question)
+    if not zrozumienie["o_uprawie"]:
+        # Odsiane na wejsciu, przed wyszukiwaniem i czytaniem ksiazek. Inaczej
+        # pytanie o pogode przechodzi cala droge i kosztuje kilkanascie wywolan,
+        # zeby na koncu uslyszec to samo.
+        return _nie_o_tym()
+
+    pytanie = zrozumienie["pytanie"]
+    forma = FORMY.get(zrozumienie["forma"], FORMY["odpowiedz"])
 
     db = SessionLocal()
     try:
         fakty, by_id, pages, sources = zbierz_fakty_do_pytania(
-            db, do_wyszukania, source_ids, na_ksiazke=miara["na_ksiazke"]
+            db, pytanie, source_ids, na_ksiazke=forma["na_ksiazke"]
         )
         if not fakty:
             return _no_data()
 
-        # Roznic szukamy wsrod WSZYSTKICH zebranych faktow, nie tylko tych,
-        # ktore wejda do odpowiedzi. Odpowiedz ma byc krotka, porownanie ksiazek
-        # ma byc szerokie - to dwa rozne cele i nie moga dzielic jednej liczby.
-        znajdz_konflikty(db, do_wyszukania, fakty, by_id)
-
-        do_pisania = wybierz_fakty(do_wyszukania, fakty, sources, by_id, miara["faktow"])
         raw = _napisz_z_faktow(
-            do_wyszukania, do_pisania, ustalenia_dla(db, list(by_id)), glebokosc
+            pytanie,
+            przytnij_fakty(fakty, by_id, forma["faktow"]),
+            ustalenia_dla(db, list(by_id)),
+            forma["jak"],
         )
-        return _verify(raw, by_id, pages, sources)
+        odpowiedz = _verify(raw, by_id, pages, sources)
+
+        # Roznice miedzy ksiazkami szukamy PO zlozeniu odpowiedzi. To osobna
+        # sprawa niz pisanie i nie ma prawa na nie wplywac - a fakty i tak sa
+        # juz zebrane, wiec drugi raz ich nie kupujemy.
+        znajdz_konflikty(db, pytanie, fakty, by_id)
+        return odpowiedz
     finally:
         db.close()
 
@@ -541,6 +560,15 @@ def _poprzednie_akapity(db, chunks: list[Chunk]) -> dict[int, str | None]:
         )
         wynik[chunk.id] = poprzedni.text[:200] if poprzedni else None
     return wynik
+
+
+def _nie_o_tym() -> dict:
+    """Pytanie spoza dziedziny ksiazek. Mowimy to wprost i nie szukamy."""
+    return {
+        "sentences": [],
+        "sources": [],
+        "note": "To pytanie nie dotyczy uprawy — nie znajdę tego w książkach ogrodniczych.",
+    }
 
 
 def _no_data() -> dict:
@@ -586,7 +614,7 @@ def _zbierz_fakty(question: str, context: list[dict]) -> list[dict]:
 
 
 def _napisz_z_faktow(
-    question: str, fakty: list[dict], ustalenia: list[dict] | None = None, glebokosc: str = "krotka"
+    question: str, fakty: list[dict], ustalenia: list[dict] | None = None, jak: str = ""
 ) -> dict:
     """Krok drugi: odpowiedz ulozona z faktow.
 
@@ -600,7 +628,7 @@ def _napisz_z_faktow(
         model=settings.answer_model,
         temperature=0.3,
         messages=[
-            {"role": "system", "content": PISANIE_PROMPT + "\n\n" + _DLUGOSC.get(glebokosc, _DLUGOSC["krotka"])},
+            {"role": "system", "content": PISANIE_PROMPT + "\n\n" + (jak or FORMY["odpowiedz"]["jak"])},
             {
                 "role": "user",
                 "content": json.dumps(

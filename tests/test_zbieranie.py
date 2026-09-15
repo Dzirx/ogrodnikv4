@@ -7,40 +7,46 @@ miejsc wypadał jeden akapit na książkę, a część książek nie dostawała 
 Liczba zaznaczonych książek nie może zmieniać zasad.
 """
 
-import app.answer.build as build
-from app.answer.build import MAX_FAKTOW, wybierz_fakty
+from app.answer.build import przytnij_fakty
 from app.db.base import SessionLocal
 from app.db.models import Source
 from app.search.index import NA_KSIAZKE, szukaj_w_kazdej_ksiazce
 
 
-def _fakty(ile):
-    return [{"tresc": f"fakt {i}", "warunek": "", "chunk_id": i, "quote": "x"} for i in range(ile)]
+class _Akapit:
+    def __init__(self, chunk_id, source_id):
+        self.id = chunk_id
+        self.source_id = source_id
 
 
-def test_malo_faktow_idzie_bez_pytania_modelu(monkeypatch):
-    """Sędzia kosztuje wywołanie modelu - przy kilku faktach nie ma czego ważyć."""
-    def nie_wolno(*_a, **_k):
-        raise AssertionError("model nie powinien być wołany")
-
-    monkeypatch.setattr(build._openai.chat.completions, "create", nie_wolno)
-    fakty = _fakty(MAX_FAKTOW)
-
-    assert wybierz_fakty("pytanie", fakty, {}, {}) == fakty
+def _fakty(ile, source_id=1, od=0):
+    return [
+        {"tresc": f"fakt {i}", "warunek": "", "chunk_id": i + od, "quote": "x"}
+        for i in range(ile)
+    ]
 
 
-def test_gdy_sedzia_milczy_bierzemy_poczatek_listy(monkeypatch):
-    """Gorsza odpowiedź jest lepsza niż brak odpowiedzi."""
-    def zepsuty(*_a, **_k):
-        raise RuntimeError("model niedostępny")
+def _by_id(fakty, source_id):
+    return {f["chunk_id"]: _Akapit(f["chunk_id"], source_id) for f in fakty}
 
-    monkeypatch.setattr(build._openai.chat.completions, "create", zepsuty)
-    fakty = _fakty(MAX_FAKTOW + 10)
 
-    wynik = wybierz_fakty("pytanie", fakty, {}, {})
+def test_male_zbiory_ida_w_calosci():
+    fakty = _fakty(5)
 
-    assert len(wynik) == MAX_FAKTOW
-    assert wynik == fakty[:MAX_FAKTOW]
+    assert przytnij_fakty(fakty, _by_id(fakty, 1), 12) == fakty
+
+
+def test_przyciecie_nie_wycina_calej_ksiazki():
+    """Gdyby brać po kolei, książka wypisana jako druga wypadłaby w całości."""
+    pierwsza = _fakty(10, od=0)
+    druga = _fakty(10, od=100)
+    by_id = {**_by_id(pierwsza, 1), **_by_id(druga, 2)}
+
+    wynik = przytnij_fakty(pierwsza + druga, by_id, 6)
+
+    assert len(wynik) == 6
+    z_pierwszej = [f for f in wynik if f["chunk_id"] < 100]
+    assert len(z_pierwszej) == 3, "po równo z każdej książki"
 
 
 def test_kazda_gotowa_ksiazka_dostaje_wlasne_miejsce():

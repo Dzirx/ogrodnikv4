@@ -67,18 +67,42 @@ def test_gdy_model_zawiedzie_zostaje_pytanie_i_krotka_odpowiedz(monkeypatch):
 
     monkeypatch.setattr(build, "_openai", Zepsuty)
 
-    assert build.zrozum_pytanie([], "w jakim pH sadzić pomidory?") == (
-        "w jakim pH sadzić pomidory?",
-        "krotka",
+    assert build.zrozum_pytanie([], "w jakim pH sadzić pomidory?") == {
+        "pytanie": "w jakim pH sadzić pomidory?",
+        "forma": "odpowiedz",
+        "o_uprawie": True,
+        "temat": "",
+    }
+
+
+def test_forma_skaluje_zakres_wyszukiwania():
+    """Prośba o materiał musi dać więcej materiału, nie to samo co zawsze."""
+    from app.answer.build import FORMY
+
+    assert FORMY["odpowiedz"]["na_ksiazke"] < FORMY["rozwiniecie"]["na_ksiazke"] < FORMY["material"]["na_ksiazke"]
+    assert FORMY["odpowiedz"]["faktow"] < FORMY["rozwiniecie"]["faktow"] < FORMY["material"]["faktow"]
+    for forma in ("odpowiedz", "rozwiniecie", "material", "post", "lista"):
+        assert FORMY[forma]["jak"], f"{forma} musi mieć własną instrukcję pisania"
+
+
+def test_pytanie_spoza_dziedziny_konczy_sie_przed_wyszukiwaniem(monkeypatch):
+    """Pytanie o pogodę przechodziło całą drogę i kosztowało kilkanaście wywołań,
+    żeby na końcu usłyszeć to samo."""
+    import app.answer.build as build
+
+    monkeypatch.setattr(
+        build, "zrozum_pytanie",
+        lambda h, p: {"pytanie": p, "forma": "odpowiedz", "o_uprawie": False, "temat": ""},
+    )
+    monkeypatch.setattr(
+        build, "zbierz_fakty_do_pytania",
+        lambda *a, **k: (_ for _ in ()).throw(AssertionError("nie wolno szukać")),
     )
 
+    wynik = build.answer_question("jaka jest pogoda w Zakopanem?")
 
-def test_glebokosc_skaluje_zakres_wyszukiwania():
-    """Prośba o materiał musi dać więcej materiału, nie ten sam co zawsze."""
-    from app.answer.build import GLEBOKOSC
-
-    assert GLEBOKOSC["krotka"]["na_ksiazke"] < GLEBOKOSC["wiecej"]["na_ksiazke"] < GLEBOKOSC["material"]["na_ksiazke"]
-    assert GLEBOKOSC["krotka"]["faktow"] < GLEBOKOSC["wiecej"]["faktow"] < GLEBOKOSC["material"]["faktow"]
+    assert wynik["sentences"] == []
+    assert "nie dotyczy uprawy" in wynik["note"]
 
 
 def test_sklejone_kawalki_daja_jeden_akapit():
