@@ -9,7 +9,10 @@ import re
 import fitz
 
 from app.db.base import SessionLocal
-from app.db.models import Chunk, Label, Page, Source, SourceLabel
+from sqlalchemy.orm.attributes import flag_modified
+
+from app.answer.cytaty import bez_odstepow
+from app.db.models import Chunk, Label, Message, Page, Source, SourceLabel
 from app.ingest.chunks import split_into_paragraphs
 from app.ingest.storage import download_bytes, upload_bytes
 from app.search.index import index_source
@@ -107,6 +110,7 @@ def process_source(source_id: int) -> None:
 
         db.commit()
         index_source(source_id)
+        przepnij_odnosniki(db, source_id)
 
         source = db.get(Source, source_id)
         source.status = "ready"
@@ -122,6 +126,59 @@ def process_source(source_id: int) -> None:
         raise
     finally:
         db.close()
+
+
+def przepnij_odnosniki(db, source_id: int) -> int:
+    """Odnosniki w zapisanych odpowiedziach po ponownym podziale ksiazki.
+
+    Akapity dostaja przy ponownym przetworzeniu nowe numery, wiec kazda
+    zapisana odpowiedz wskazywala w pustke - klikniecie przypisu nie pokazywalo
+    niczego. Odnajdujemy nowy akapit po zapisanej tresci starego: wpis zrodla
+    trzyma cala jego tresc, a porownanie po samych literach przechodzi mimo
+    poprawionego odczytu PDF-a.
+
+    Zwraca liczbe przepietych odnosnikow."""
+    istnieja = {c.id for c in db.query(Chunk).filter_by(source_id=source_id).all()}
+    strony = {p.number: p.id for p in db.query(Page).filter_by(source_id=source_id).all()}
+    akapity_strony: dict[int, list[Chunk]] = {}
+    for chunk in db.query(Chunk).filter_by(source_id=source_id).all():
+        akapity_strony.setdefault(chunk.page_id, []).append(chunk)
+
+    przepiete = 0
+    for message in db.query(Message).filter_by(role="assistant").all():
+        dane = message.answer_json or {}
+        mapa: dict[int, int] = {}
+        for wpis in dane.get("sources", []):
+            if wpis.get("source_id") != source_id or wpis.get("chunk_id") in istnieja:
+                continue
+            odcisk = bez_odstepow(wpis.get("text", ""))[:120]
+            if len(odcisk) < 40:
+                continue
+            kandydaci = akapity_strony.get(strony.get(wpis.get("page")), [])
+            trafiony = next((c for c in kandydaci if odcisk in bez_odstepow(c.text)), None)
+            if trafiony is not None:
+                mapa[wpis["chunk_id"]] = trafiony.id
+        if not mapa:
+            continue
+
+        for wpis in dane.get("sources", []):
+            nowy = mapa.get(wpis["chunk_id"])
+            if nowy:
+                wpis["chunk_id"] = nowy
+                wpis["text"] = db.get(Chunk, nowy).text
+        for czesc in dane.get("sentences", []):
+            for wpis in czesc.get("sources") or []:
+                wpis["chunk_id"] = mapa.get(wpis["chunk_id"], wpis["chunk_id"])
+            if czesc.get("source"):
+                czesc["source"]["chunk_id"] = mapa.get(
+                    czesc["source"]["chunk_id"], czesc["source"]["chunk_id"]
+                )
+        # Bez tego SQLAlchemy nie zauwaza zmiany w polu JSON i zapis przepada.
+        flag_modified(message, "answer_json")
+        przepiete += len(mapa)
+
+    db.commit()
+    return przepiete
 
 
 def _extract_pages(kind: str, data: bytes) -> list[str]:
