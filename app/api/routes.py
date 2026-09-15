@@ -96,6 +96,50 @@ def rozmowa(
     )
 
 
+def tekst_ze_znacznikami(odpowiedz: dict) -> str:
+    """Tekst odpowiedzi z przypisami w postaci [1], [2] - do pola edycji.
+
+    Redaktor poprawia tekst RAZEM ze znacznikami i sam decyduje, gdzie mają
+    zostać. Bez tego po edycji nie dałoby się ich umieścić w treści, bo tekst
+    jest już jego i nie wiadomo, które zdanie z którego akapitu pochodzi -
+    a przypisy na marginesie to nie to samo, co przypis przy zdaniu."""
+    czesci = []
+    for zdanie in odpowiedz.get("sentences", []):
+        tekst = zdanie.get("text", "")
+        zrodlo = zdanie.get("source")
+        czesci.append(f"{tekst} [{zrodlo['marker']}]" if zrodlo else tekst)
+    return " ".join(czesci)
+
+
+_ZNACZNIK_RE = re.compile(r"\[(\d{1,2})\]")
+
+
+def rozbij_znaczniki(tekst: str, zrodla: list[dict]) -> list[dict]:
+    """Dzieli poprawiony tekst na fragmenty i znaczniki [N].
+
+    Szablon nie może wstawić odnośnika w środek napisu, a wstawianie surowego
+    HTML-a z bazy jest wykluczone - więc rozbijamy tekst tutaj i szablon składa
+    go z bezpiecznych kawałków."""
+    po_numerze = {z["marker"]: z for z in zrodla}
+    czesci: list[dict] = []
+    ostatni = 0
+    for dopasowanie in _ZNACZNIK_RE.finditer(tekst):
+        if dopasowanie.start() > ostatni:
+            czesci.append({"tekst": tekst[ostatni : dopasowanie.start()]})
+        numer = int(dopasowanie.group(1))
+        zrodlo = po_numerze.get(numer)
+        if zrodlo:
+            czesci.append({"znacznik": numer, "zrodlo": zrodlo})
+        else:
+            # Numer, którego nie ma wśród źródeł (redaktor wpisał go sam) -
+            # zostawiamy jako zwykły tekst, zamiast udawać odnośnik.
+            czesci.append({"tekst": dopasowanie.group(0)})
+        ostatni = dopasowanie.end()
+    if ostatni < len(tekst):
+        czesci.append({"tekst": tekst[ostatni:]})
+    return czesci
+
+
 def _rozbij_na_cytat(akapit: str, cytat: str) -> list[dict]:
     """Dzieli akapit na części przed cytatem, cytat i po nim.
 
@@ -475,3 +519,8 @@ def rozstrzygnij(
     konflikt.resolved_at = datetime.utcnow()
     db.commit()
     return RedirectResponse("/konflikty", status_code=303)
+
+
+# Funkcje pomocnicze dla szablonow - przypisane na koncu, bo definiowane wyzej.
+templates.env.globals["tekst_ze_znacznikami"] = tekst_ze_znacznikami
+templates.env.globals["rozbij_znaczniki"] = rozbij_znaczniki

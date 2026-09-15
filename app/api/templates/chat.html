@@ -170,20 +170,18 @@
                  Zrodla ida OBOK tekstu, nie pod spodem: po edycji nie da sie
                  przypisac ich do konkretnych zdan, ale redaktor ma je miec w
                  zasiegu wzroku, a nie szukac ich nizej. #}
-              <div class="tekst-ze-zrodlami">
-                <p class="tekst-poprawiony">{{ w.edited_text }}</p>
-                <aside class="zrodla-obok">
-                  <span class="podpowiedz">Źródła</span>
-                  {# Kazde raz, nawet gdy kilka zdan opieralo sie na tym samym
-                     akapicie - lista wygladala jak "1 1 2 2 3 2". #}
-                  {% for wpis in w.answer_json.sources %}
-                  <a class="zrodlo-wpis" href="?podglad={{ wpis.chunk_id }}">
-                    <span class="znacznik">{{ wpis.marker }}</span>
-                    <small>{{ wpis.source_title }}, s. {{ wpis.page }}</small>
-                  </a>
-                  {% endfor %}
-                </aside>
-              </div>
+              {# Przypisy zostaja W TEKSCIE, tak jak przy odpowiedzi modelu.
+                 Redaktor edytuje tekst razem ze znacznikami [1], [2] i sam
+                 decyduje, gdzie maja stac. #}
+              <p class="tekst-poprawiony">
+                {%- for czesc in rozbij_znaczniki(w.edited_text, w.answer_json.sources) -%}
+                  {%- if czesc.znacznik -%}
+                    <a class="znacznik" href="?podglad={{ czesc.zrodlo.chunk_id }}" title="{{ czesc.zrodlo.source_title }}, strona {{ czesc.zrodlo.page }}">{{ czesc.znacznik }}</a>
+                  {%- else -%}
+                    {{ czesc.tekst }}
+                  {%- endif -%}
+                {%- endfor -%}
+              </p>
               {% else %}
               <p>
                 {%- for zdanie in w.answer_json.sentences -%}
@@ -216,8 +214,8 @@
               <dialog class="okno-edycji" id="edycja-{{ w.id }}">
                 <form method="post" action="/rozmowy/{{ rozmowa.id }}/wiadomosci/{{ w.id }}">
                   <h2>Popraw odpowiedź</h2>
-                  <textarea name="tekst" rows="10">{{ w.edited_text or (w.answer_json.sentences | map(attribute="text") | join(" ")) }}</textarea>
-                  <p class="podpowiedz">Puste pole przywraca wersję z modelu. Źródła zostaną bez zmian.</p>
+                  <textarea name="tekst" rows="10">{{ w.edited_text or tekst_ze_znacznikami(w.answer_json) }}</textarea>
+                  <p class="podpowiedz">Znaczniki <code>[1]</code>, <code>[2]</code> to odnośniki do źródeł — przesuń je razem ze zdaniem albo usuń, jeśli zdanie znika. Puste pole przywraca wersję z modelu.</p>
                   <p class="przyciski-okna">
                     <button type="submit">Zapisz</button>
                     <button type="button" class="drugorzedny" data-zamknij="edycja-{{ w.id }}">Anuluj</button>
@@ -293,9 +291,13 @@
   document.querySelectorAll('[data-kopiuj]').forEach(function (przycisk) {
     przycisk.addEventListener('click', function () {
       var blok = document.getElementById(przycisk.dataset.kopiuj);
-      var tekst = blok.querySelector('.tekst-poprawiony')
-        ? blok.querySelector('.tekst-poprawiony').innerText
+      // Kopiujemy sam tekst, bez numerow przypisow - ma sie wkleic czysto.
+      var zrodlo = blok.querySelector('.tekst-poprawiony');
+      var tekst = zrodlo
+        ? Array.from(zrodlo.childNodes).filter(function (w) { return w.nodeType === 3; })
+            .map(function (w) { return w.textContent; }).join('')
         : Array.from(blok.querySelectorAll('.zdanie')).map(function (z) { return z.innerText; }).join(' ');
+      tekst = tekst.replace(/\s+/g, ' ').trim();
       navigator.clipboard.writeText(tekst).then(function () {
         var poprzedni = przycisk.innerText;
         przycisk.innerText = '✓ skopiowane';
