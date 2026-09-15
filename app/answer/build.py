@@ -24,6 +24,7 @@ from openai import OpenAI
 
 from app.answer.cytaty import normalize, quote_is_in_chunk
 from app.answer.konflikty import ustalenia_dla, znajdz_konflikty
+from app.answer.plan import zaplanuj
 from app.config import settings
 from app.db.base import SessionLocal
 from app.db.models import Chunk, Page, Source
@@ -133,9 +134,17 @@ Dobrze: "Lej pod korzeń, nigdy na liście. Najlepsza jest deszczówka albo woda
          Jeśli planujesz zbiór jesienny, wysiewaj nasiona w czerwcu."
 Dobrze: "Na zbiór letni wysiewaj od kwietnia. Na jesienny miesiąc-dwa później."
 
+PLAN
+Czasem dostajesz plan — listę zagadnień, które tekst ma obejmować, w kolejności. Trzymaj
+się go: jedno zagadnienie to jeden akapit. Zagadnienie, na które nie masz faktów, POMIŃ
+w całości — nie pisz o nim z własnej głowy ani nie zapowiadaj, że książki tego nie mówią.
+
+Gdy planu nie ma, sam decydujesz, ile tekstu potrzeba. Tyle, ile mówią fakty — ani zdania
+więcej.
+
 JAK ODDAJESZ ODPOWIEDŹ
-Piszesz JEDEN płynny akapit. Oddajesz go pocięty na kawałki, ale to nadal jeden ciąg
-tekstu — sklejone kawałki muszą się czytać jak zwykła wypowiedź.
+Oddajesz tekst pocięty na kawałki, ale to nadal jeden ciąg — sklejone kawałki muszą się
+czytać jak zwykła wypowiedź.
 
 Tniesz TYLKO tam, gdzie kończy się zasięg przypisu. Kawałek to ten fragment zdania,
 który stoi na tych samych faktach. Zdanie złożone dzieli się zwykle na dwa albo trzy
@@ -151,13 +160,12 @@ akapit jest jeden, więc wszędzie fałsz.
 Kawałek, który cokolwiek mówi, podaje numery faktów, na których stoi. Jeśli następny
 kawałek nadal stoi na tym samym fakcie, powtórz ten numer.
 
-Kawałek bez numerów też jest dozwolony, ale WYŁĄCZNIE jako spoiwo: przecinek, myślnik,
-spójnik. ", a", " — ", ". Za to". W spoiwie nie wolno podać żadnej liczby ani nazwać
-żadnej rzeczy — pierwsze słowo niosące treść musi stać w kawałku z numerem.
+Kawałek bez numerów jest dozwolony WYŁĄCZNIE jako spoiwo: przecinek, myślnik, spójnik.
+", a", " — ", ". Za to". W spoiwie nie wolno podać żadnej liczby ani nazwać żadnej rzeczy.
 
-Wolno Ci też wpleść krótki zwrot łączący, wyłącznie jeden z tych: "Do tego", "Na koniec",
-"Jeszcze jedno", "Przy okazji", "Za to". Żadnego innego — zwrot, którego tu nie ma,
-zostanie odrzucony jako zdanie bez pokrycia w książce.
+Zdanie łączące, które coś mówi, nie jest spoiwem — podaj przy nim numery faktów, które
+łączy. "Zanim posadzisz, przygotuj glebę" stoi na fakcie o przygotowaniu gleby i ma go
+wskazać.
 
 Przykład dla faktów 0: "podlewać 2-3 razy w tygodniu, w czasie kwitnienia",
 1: "częściej w upały i pod osłonami", 2: "lać pod krzew, nie moczyć liści":
@@ -179,9 +187,8 @@ do niej byłby nieprawdą. Reszta zdania zostaje w swoich kawałkach, ze swoimi 
 faktów. Gdy nie korzystasz z żadnego ustalenia, zostaw "ustalenia" puste.
 
 ILE PISAĆ
-Długość dostajesz osobno, na końcu tych zasad. Ale ona jest granicą, nie zadaniem do
-wykonania: jeśli faktów nie starcza na tyle tekstu, o ile poproszono, piszesz tyle, ile
-masz z faktów, i kończysz.
+Długość bierze się z faktów, nie z polecenia. Jeśli faktów starcza na trzy akapity,
+piszesz trzy — choćby poproszono o dziesięć.
 
 Nigdy nie dopisuj zdań, które nic nie mówią, żeby tekst był dłuższy. "Wybór odpowiedniego
 terminu jest kluczowy dla zdrowego wzrostu roślin", "metody mogą się różnić w zależności
@@ -313,41 +320,41 @@ FORMY = {
     "odpowiedz": {
         "na_ksiazke": 6,
         "faktow": 12,
-        "jak": "Odpowiadaj krótko. Kilka zdań wystarczy. Jeden akapit.",
+        "planuje": False,
+        "jak": "Odpowiedz na pytanie. Bez wstępu, bez podsumowania.",
     },
     "rozwiniecie": {
-        "na_ksiazke": 10,
-        "faktow": 22,
-        "jak": (
-            "Rozwiń temat: jeden albo dwa akapity po cztery, pięć zdań. Nowy akapit"
-            " zaczynasz, gdy przechodzisz do innej rzeczy."
-        ),
+        "na_ksiazke": 8,
+        "faktow": 24,
+        "planuje": True,
+        "jak": "Rozwiń temat — powiedz to, co książki mówią, nie tylko samo sedno.",
     },
     "material": {
-        "na_ksiazke": 14,
-        "faktow": 36,
+        "na_ksiazke": 8,
+        "faktow": 40,
+        "planuje": True,
         "jak": (
-            "To ma być materiał do czytania, nie odpowiedź na pytanie. Cztery do sześciu"
-            " akapitów po cztery, pięć zdań, każdy o czym innym — przygotowanie, termin,"
-            " prowadzenie, kłopoty. Nie zapowiadaj na początku i nie streszczaj na końcu."
-            " Jeden akapit to kilka faktów, a nie jeden rozciągnięty na pięć zdań."
+            "To ma być materiał do czytania, nie odpowiedź na pytanie. Nie zapowiadaj"
+            " na początku i nie streszczaj na końcu, po prostu pisz."
         ),
     },
     "post": {
         "na_ksiazke": 8,
         "faktow": 14,
+        "planuje": False,
         "jak": (
-            "To ma być wpis na Facebooka. Trzy do sześciu zdań, jeden akapit, ton taki jak"
-            " w próbkach wyżej. Zacznij od rzeczy, nie od zapowiedzi. Bez emotek, bez"
-            " hasztagów, bez wołania o komentarze."
+            "To ma być wpis na Facebooka. Krótko, jednym ciągiem, tonem z próbek wyżej."
+            " Zacznij od rzeczy, nie od zapowiedzi. Bez emotek, bez hasztagów, bez"
+            " wołania o komentarze."
         ),
     },
     "lista": {
-        "na_ksiazke": 10,
-        "faktow": 20,
+        "na_ksiazke": 8,
+        "faktow": 24,
+        "planuje": True,
         "jak": (
             "To ma być wyliczenie. Każdy punkt w osobnym akapicie (ustaw \"nowy_akapit\"),"
-            " jedno albo dwa zdania, zaczynaj od myślnika. Bez wstępu i bez podsumowania."
+            " zaczynaj od myślnika. Bez wstępu i bez podsumowania."
         ),
     },
 }
@@ -395,7 +402,11 @@ def zrozum_pytanie(historia: list[tuple[str, str]], pytanie: str) -> dict:
 
 
 def zbierz_fakty_do_pytania(
-    db, pytanie: str, source_ids: list[int] | None = None, na_ksiazke: int = NA_KSIAZKE
+    db,
+    pytanie: str,
+    source_ids: list[int] | None = None,
+    na_ksiazke: int = NA_KSIAZKE,
+    zagadnienia: list[str] | None = None,
 ) -> tuple[list[dict], dict, dict, dict]:
     """Fakty wypisane OSOBNO z kazdej ksiazki z zakresu.
 
@@ -405,9 +416,26 @@ def zbierz_fakty_do_pytania(
     wypadal jeden akapit, a czesc nie dostawala nic, wiec ksiazka slabsza
     jezykowo nie miala jak dojsc do glosu. Liczba ksiazek nie moze zmieniac
     zasad."""
-    per_ksiazka = szukaj_w_kazdej_ksiazce(pytanie, source_ids, na_ksiazke)
+    # Szukamy osobno dla polecenia i dla kazdego zagadnienia z planu. Jedno
+    # wyszukiwanie na cale "napisz artykul o uprawie w tunelu" daje akapity
+    # o wszystkim po trochu; osobne zapytanie o "podlewanie w upaly" trafia
+    # tam, gdzie ksiazka naprawde o tym pisze.
+    zapytania = [pytanie] + [z for z in (zagadnienia or []) if z]
+    per_ksiazka: dict[int, list[int]] = {}
+    # Ktory akapit przyszedl z ktorego zagadnienia - stad wiadomo pozniej,
+    # ktore zagadnienia maja pokrycie w ksiazkach.
+    znalezione_dla: dict[str, set[int]] = {}
+    for zapytanie in zapytania:
+        for source_id, akapity in szukaj_w_kazdej_ksiazce(zapytanie, source_ids, na_ksiazke).items():
+            znane = per_ksiazka.setdefault(source_id, [])
+            znane.extend(a for a in akapity if a not in znane)
+            znalezione_dla.setdefault(zapytanie, set()).update(akapity)
     if not per_ksiazka:
-        return [], {}, {}, {}
+        return [], {}, {}, {}, {}
+
+    # Sufit na ksiazke, zeby plan z siedmioma zagadnieniami nie wpychal do
+    # jednego wywolania stu akapitow.
+    per_ksiazka = {sid: akapity[: na_ksiazke * 3] for sid, akapity in per_ksiazka.items()}
 
     wszystkie = [cid for lista in per_ksiazka.values() for cid in lista]
     chunks = db.query(Chunk).filter(Chunk.id.in_(wszystkie)).all()
@@ -459,12 +487,35 @@ def zbierz_fakty_do_pytania(
     with ThreadPoolExecutor(max_workers=RAZEM_KSIAZEK) as pula:
         for wynik in pula.map(z_jednej_ksiazki, per_ksiazka.values()):
             fakty.extend(wynik)
-    return fakty, by_id, pages, sources
+    return fakty, by_id, pages, sources, znalezione_dla
 
 
 # Ile ksiazek czytamy naraz. Wyzej nie ma sensu - to zapytania do modelu,
 # nie obliczenia.
 RAZEM_KSIAZEK = 6
+
+
+# Ile faktow musi stac za zagadnieniem, zeby warto je bylo opisac. Jeden fakt
+# to zwykle zdanie wyrwane z innego tematu.
+MIN_FAKTOW_NA_ZAGADNIENIE = 2
+
+
+def zagadnienia_z_pokryciem(
+    zagadnienia: list[str], fakty: list[dict], znalezione_dla: dict[str, set[int]]
+) -> list[str]:
+    """Zagadnienia, o ktorych ksiazki naprawde cos mowia.
+
+    Plan powstaje z wiedzy modelu, wiec planuje tez rozdzialy, ktorych zrodla
+    nie maja. Powiedziane wprost w prompcie - i zignorowane: artykul o tunelach
+    dostal trzy akapity w rodzaju "wybor odmian nie zostal omowiony w dostepnych
+    faktach". Zamiast przekonywac model, nie dajemy mu tych zagadnien."""
+    maja: list[str] = []
+    for zagadnienie in zagadnienia:
+        akapity = znalezione_dla.get(zagadnienie, set())
+        ile = sum(1 for f in fakty if f.get("chunk_id") in akapity)
+        if ile >= MIN_FAKTOW_NA_ZAGADNIENIE:
+            maja.append(zagadnienie)
+    return maja
 
 
 def przytnij_fakty(fakty: list[dict], by_id: dict, ile: int) -> list[dict]:
@@ -514,21 +565,29 @@ def answer_question(
         return _nie_o_tym()
 
     pytanie = zrozumienie["pytanie"]
-    forma = FORMY.get(zrozumienie["forma"], FORMY["odpowiedz"])
+    nazwa_formy = zrozumienie["forma"]
+    forma = FORMY.get(nazwa_formy, FORMY["odpowiedz"])
+
+    # Plan tylko dla dluzszych tekstow. Na pytanie o odczyn gleby nie ma czego
+    # planowac, a wywolanie kosztowaloby tyle samo co odpowiedz.
+    zagadnienia = zaplanuj(pytanie, nazwa_formy) if forma["planuje"] else []
 
     db = SessionLocal()
     try:
-        fakty, by_id, pages, sources = zbierz_fakty_do_pytania(
-            db, pytanie, source_ids, na_ksiazke=forma["na_ksiazke"]
+        fakty, by_id, pages, sources, znalezione_dla = zbierz_fakty_do_pytania(
+            db, pytanie, source_ids, na_ksiazke=forma["na_ksiazke"], zagadnienia=zagadnienia
         )
         if not fakty:
             return _no_data()
+
+        zagadnienia = zagadnienia_z_pokryciem(zagadnienia, fakty, znalezione_dla)
 
         raw = _napisz_z_faktow(
             pytanie,
             przytnij_fakty(fakty, by_id, forma["faktow"]),
             ustalenia_dla(db, list(by_id)),
             forma["jak"],
+            zagadnienia,
         )
         odpowiedz = _verify(raw, by_id, pages, sources)
 
@@ -614,7 +673,11 @@ def _zbierz_fakty(question: str, context: list[dict]) -> list[dict]:
 
 
 def _napisz_z_faktow(
-    question: str, fakty: list[dict], ustalenia: list[dict] | None = None, jak: str = ""
+    question: str,
+    fakty: list[dict],
+    ustalenia: list[dict] | None = None,
+    jak: str = "",
+    zagadnienia: list[str] | None = None,
 ) -> dict:
     """Krok drugi: odpowiedz ulozona z faktow.
 
@@ -632,7 +695,12 @@ def _napisz_z_faktow(
             {
                 "role": "user",
                 "content": json.dumps(
-                    {"pytanie": question, "fakty": do_napisania, "ustalenia": ustalenia or []},
+                    {
+                        "pytanie": question,
+                        "fakty": do_napisania,
+                        "ustalenia": ustalenia or [],
+                        "plan": zagadnienia or [],
+                    },
                     ensure_ascii=False,
                 ),
             },
@@ -743,7 +811,7 @@ def _verify(raw: dict, by_id: dict, pages: dict, sources: dict) -> dict:
                 }
             )
 
-        tekst = item.get("text", "")
+        tekst = _brakujaca_spacja(item.get("text", ""))
         ustalenie = item.get("ustalenie")
         spoiwo = not zrodla and not ustalenie and jest_spoiwem(tekst)
         czesci.append(
@@ -780,6 +848,16 @@ def _verify(raw: dict, by_id: dict, pages: dict, sources: dict) -> dict:
         )
 
     return {"sentences": czesci, "sources": source_list, "note": None}
+
+
+# Kropka miedzy mala a wielka litera bez spacji - literowka modelu w srodku
+# kawalka ("agrowloknina.Nie ma potrzeby"). Sklejanie kawalkow tego nie zlapie,
+# bo to jeden kawalek.
+_SKLEJONE_ZDANIA = re.compile(r"(?<=[a-ząćęłńóśźż])\.(?=[A-ZĄĆĘŁŃÓŚŹŻ])")
+
+
+def _brakujaca_spacja(tekst: str) -> str:
+    return _SKLEJONE_ZDANIA.sub(". ", tekst)
 
 
 def sklej(czesci: list[dict]) -> str:

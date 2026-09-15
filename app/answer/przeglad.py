@@ -115,7 +115,7 @@ def przejrzyj_zrodlo(source_id: int) -> int:
         znalezione = 0
         for pytanie in pytania_do_zrodla(db, source):
             try:
-                fakty, by_id = zbierz_fakty_do_pytania(db, pytanie)
+                fakty, by_id, _p, _s, _z = zbierz_fakty_do_pytania(db, pytanie)
                 if fakty:
                     znalezione += len(znajdz_konflikty(db, pytanie, fakty, by_id))
             except Exception:

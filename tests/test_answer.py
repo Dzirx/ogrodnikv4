@@ -76,11 +76,17 @@ def test_gdy_model_zawiedzie_zostaje_pytanie_i_krotka_odpowiedz(monkeypatch):
 
 
 def test_forma_skaluje_zakres_wyszukiwania():
-    """Prośba o materiał musi dać więcej materiału, nie to samo co zawsze."""
+    """Prośba o materiał musi dać więcej materiału, nie to samo co zawsze.
+
+    Zakres rośnie teraz planem zagadnień, nie liczbą akapitów na książkę:
+    każde zagadnienie to osobne wyszukiwanie w każdej książce."""
     from app.answer.build import FORMY
 
-    assert FORMY["odpowiedz"]["na_ksiazke"] < FORMY["rozwiniecie"]["na_ksiazke"] < FORMY["material"]["na_ksiazke"]
     assert FORMY["odpowiedz"]["faktow"] < FORMY["rozwiniecie"]["faktow"] < FORMY["material"]["faktow"]
+    assert not FORMY["odpowiedz"]["planuje"], "na pytanie o odczyn gleby nie ma czego planować"
+    assert not FORMY["post"]["planuje"]
+    assert FORMY["material"]["planuje"]
+    assert FORMY["rozwiniecie"]["planuje"]
     for forma in ("odpowiedz", "rozwiniecie", "material", "post", "lista"):
         assert FORMY[forma]["jak"], f"{forma} musi mieć własną instrukcję pisania"
 
@@ -156,3 +162,15 @@ def test_zmieniona_liczba_nie_przechodzi_takze_bez_odstepow():
 
     assert not quote_is_in_chunk("kiełkują w temperaturze 30-35°C", akapit)
     assert not quote_is_in_chunk("kiełkują w temperaturze 22-28°C zawsze", akapit)
+
+
+def test_sklejone_zdania_w_kawalku_dostaja_spacje():
+    """Literówka modelu w środku kawałka: "agrowłókniną.Nie ma potrzeby".
+    Sklejanie kawałków tego nie łapie, bo to jeden kawałek."""
+    from app.answer.build import _brakujaca_spacja
+
+    assert _brakujaca_spacja("agrowłókniną.Nie ma potrzeby") == "agrowłókniną. Nie ma potrzeby"
+    assert _brakujaca_spacja("pH 6,0.Gleba ma być żyzna") == "pH 6,0.Gleba ma być żyzna", (
+        "po cyfrze nie ruszamy - to może być liczba dziesiętna albo numer"
+    )
+    assert _brakujaca_spacja("3.5 kg") == "3.5 kg"

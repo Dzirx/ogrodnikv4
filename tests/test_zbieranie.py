@@ -77,3 +77,17 @@ def test_zawezenie_do_jednej_ksiazki_nie_wpuszcza_innych():
     wynik = szukaj_w_kazdej_ksiazce("w jakim pH sadzić pomidory?", [gotowe[0]])
 
     assert set(wynik) <= {gotowe[0]}
+
+
+def test_zagadnienie_bez_pokrycia_wypada_z_planu():
+    """Plan powstaje z wiedzy modelu, więc planuje też rozdziały, których książki
+    nie mają. Artykuł o tunelach dostawał przez to akapity w rodzaju "wybór odmian
+    nie został omówiony w dostępnych faktach"."""
+    from app.answer.build import zagadnienia_z_pokryciem
+
+    fakty = [{"chunk_id": 1}, {"chunk_id": 2}, {"chunk_id": 9}]
+    znalezione = {"nawadnianie": {1, 2}, "wybór odmian": {7, 8}, "zbiór": {9}}
+
+    wynik = zagadnienia_z_pokryciem(["nawadnianie", "wybór odmian", "zbiór"], fakty, znalezione)
+
+    assert wynik == ["nawadnianie"], "jeden fakt to za mało, żeby pisać o tym akapit"
