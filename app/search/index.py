@@ -15,7 +15,6 @@ from qdrant_client.models import (
     FilterSelector,
     FieldCondition,
     Filter,
-    MatchAny,
     MatchValue,
     PayloadSchemaType,
     PointStruct,
@@ -24,7 +23,7 @@ from qdrant_client.models import (
 
 from app.config import settings
 from app.db.base import SessionLocal
-from app.db.models import Chunk, Page
+from app.db.models import Chunk, Page, Source
 
 # text-embedding-3-large
 EMBEDDING_DIM = 3072
@@ -175,11 +174,17 @@ def _szukaj_doslownie(slowa: list[str], source_ids: list[int] | None, limit: int
         db.close()
 
 
-# Ile akapitow gwarantujemy ksiazce, ktora w ogole cokolwiek trafila. Bez
-# tego ksiazka slabsza w rankingu nie dostaje glosu: przy dwoch ksiazkach
-# wyszukiwanie zwracalo dziewiec akapitow z jednej i jeden z drugiej, wiec
-# porownanie miedzy ksiazkami nie mialo z czego powstac.
-MIN_NA_ZRODLO = 3
+# Ile akapitow bierzemy Z KAZDEJ ksiazki osobno.
+#
+# Pierwsza wersja robila jeden ranking dla calego zbioru i wyrownywala go
+# potem. Dzialalo przy dwoch ksiazkach i rozsypywalo sie przy dwunastu: na
+# dwanascie miejsc wypadal jeden akapit na ksiazke, a trzy ksiazki nie
+# dostawaly nic. Nie da sie tego naprawic mnozeniem regul - jeden wspolny
+# ranking zawsze bedzie gral na niekorzysc ksiazek slabszych jezykowo.
+#
+# Wiec kazda ksiazka jest przeszukiwana osobno i kazda oddaje tyle samo.
+# O tym, co z tego wejdzie do odpowiedzi, decyduje pozniej osobny krok.
+NA_KSIAZKE = 6
 
 
 def _zrodla_akapitow(chunk_ids: list[int]) -> dict[int, int]:
@@ -194,29 +199,53 @@ def _zrodla_akapitow(chunk_ids: list[int]) -> dict[int, int]:
         db.close()
 
 
-def _sprawiedliwie(ranking: list[int], zrodla: dict[int, int], limit: int) -> list[int]:
-    """Dokłada akapity ksiazkom, ktore przegraly ranking, kosztem tych z nadmiarem.
+def szukaj_w_kazdej_ksiazce(
+    query: str, source_ids: list[int] | None = None, na_ksiazke: int = NA_KSIAZKE
+) -> dict[int, list[int]]:
+    """Akapity znalezione OSOBNO w kazdej ksiazce z zakresu.
 
-    Odpowiedz ma byc krotka, wiec liczba akapitow zostaje bez zmian - zmienia
-    sie tylko ich rozdzial. Ksiazka, ktora nie trafila nic, nie dostaje nic."""
-    ranking = [c for c in ranking if c in zrodla]
-    wybrane = ranking[:limit]
-    if len({zrodla[c] for c in ranking}) < 2:
-        return wybrane
+    Kazda ksiazka dostaje tyle samo miejsca, niezaleznie od tego, ile ich jest
+    i ktora wypada lepiej we wspolnym rankingu. Dwie ksiazki czy szescdziesiat
+    - zasada ta sama."""
+    db = SessionLocal()
+    try:
+        zapytanie = db.query(Source.id).filter(Source.status == "ready")
+        if source_ids:
+            zapytanie = zapytanie.filter(Source.id.in_(source_ids))
+        ksiazki = [w[0] for w in zapytanie.all()]
+    finally:
+        db.close()
+    if not ksiazki:
+        return {}
 
-    for source_id in dict.fromkeys(zrodla[c] for c in ranking):
-        brakuje = MIN_NA_ZRODLO - sum(1 for c in wybrane if zrodla[c] == source_id)
-        for kandydat in [c for c in ranking if zrodla[c] == source_id and c not in wybrane][:max(brakuje, 0)]:
-            nadmiarowe = [
-                c for c in reversed(wybrane)
-                if sum(1 for x in wybrane if zrodla[x] == zrodla[c]) > MIN_NA_ZRODLO
-            ]
-            if not nadmiarowe:
-                break
-            wybrane[wybrane.index(nadmiarowe[0])] = kandydat
+    # Wektor pytania liczymy RAZ - to jedyny platny krok, reszta to zapytania
+    # do Qdranta i Postgresa.
+    wektor = embed([query])[0]
+    slowa = _slowa_kluczowe(query)
 
-    # Kolejnosc z rankingu - najtrafniejsze najpierw, tak jak oczekuje reszta kodu.
-    return [c for c in ranking if c in set(wybrane)]
+    wynik: dict[int, list[int]] = {}
+    for source_id in ksiazki:
+        akapity = _szukaj_w_jednej(wektor, slowa, source_id, na_ksiazke)
+        if akapity:
+            wynik[source_id] = akapity
+    return wynik
+
+
+def _szukaj_w_jednej(wektor: list[float], slowa: list[str], source_id: int, ile: int) -> list[int]:
+    """Te same dwa wyszukiwania co zawsze, zawezone do jednej ksiazki."""
+    ensure_collection()
+    hits = _qdrant.search(
+        collection_name=settings.qdrant_collection,
+        query_vector=wektor,
+        limit=ile * 2,
+        query_filter=Filter(must=[FieldCondition(key="source_id", match=MatchValue(value=source_id))]),
+    )
+    wektorowe = [hit.payload["chunk_id"] for hit in hits]
+    doslowne = _szukaj_doslownie(slowa, [source_id], ile * 2)
+    ranking = _polacz(wektorowe, doslowne, ile * 2)
+    # Akapity usuniete z bazy zostawaly w indeksie i zajmowaly miejsce.
+    istnieja = _zrodla_akapitow(ranking)
+    return [c for c in ranking if c in istnieja][:ile]
 
 
 def _polacz(wektorowe: list[int], doslowne: list[int], limit: int) -> list[int]:
@@ -230,41 +259,3 @@ def _polacz(wektorowe: list[int], doslowne: list[int], limit: int) -> list[int]:
         for pozycja, chunk_id in enumerate(lista, start=1):
             punkty[chunk_id] = punkty.get(chunk_id, 0) + 1 / (60 + pozycja)
     return sorted(punkty, key=lambda cid: punkty[cid], reverse=True)[:limit]
-
-
-def search(query: str, source_ids: list[int] | None = None, limit: int = 12) -> list[int]:
-    """Zwraca id akapitow pasujacych do pytania.
-
-    `source_ids` to zakres wybrany w rozmowie - jak w NotebookLM redaktor
-    zaznacza ksiazki i pyta tylko o nie. Pusta lista albo None oznacza
-    wszystkie zrodla.
-
-    Szukamy dwoma sposobami naraz: po znaczeniu (wektory) i po slowach z
-    pytania. Same wektory gubily akapity z krotkimi terminami w rodzaju "pH",
-    same slowa nie poradzilyby sobie z pytaniem zadanym innymi slowami niz
-    ksiazka.
-
-    Limit 12, nie 45 jak w pierwszej wersji: tam szeroki zakres mial nadrobic
-    to, ze grounding odsiewal wiekszosc trafien. Tutaj kazdy znaleziony akapit
-    idzie do modelu wprost, wiec wiecej znaczy dluzsza i bardziej rozwlekla
-    odpowiedz - a redaktor prosil o krotkie."""
-    ensure_collection()
-    query_filter = None
-    if source_ids:
-        query_filter = Filter(
-            must=[FieldCondition(key="source_id", match=MatchAny(any=list(source_ids)))]
-        )
-    # Obie listy bierzemy szersze niz limit: inaczej ksiazka, ktora przegrala
-    # ranking, nie ma czym dolozyc, bo jej akapity nie zmiescily sie juz
-    # w wynikach wyszukiwania.
-    szeroko = limit * 3
-    hits = _qdrant.search(
-        collection_name=settings.qdrant_collection,
-        query_vector=embed([query])[0],
-        limit=szeroko,
-        query_filter=query_filter,
-    )
-    wektorowe = [hit.payload["chunk_id"] for hit in hits]
-    doslowne = _szukaj_doslownie(_slowa_kluczowe(query), source_ids, szeroko)
-    ranking = _polacz(wektorowe, doslowne, szeroko)
-    return _sprawiedliwie(ranking, _zrodla_akapitow(ranking), limit)

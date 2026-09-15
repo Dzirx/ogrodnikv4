@@ -6,7 +6,7 @@ za jeden mysnik byl najczestsza przyczyna falszywych alarmow, a redaktor i tak
 musial klikac "zatwierdz".
 """
 
-from app.answer.build import normalize, quote_is_in_chunk
+from app.answer.cytaty import normalize, quote_is_in_chunk
 
 AKAPIT = "Nasiona najszybciej kiełkują w temperaturze 22–28°C, przy stałej wilgotności podłoża."
 

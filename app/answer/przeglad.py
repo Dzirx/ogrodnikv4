@@ -17,7 +17,7 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.db.base import SessionLocal
-from app.db.models import Chunk, Page, Source
+from app.db.models import Chunk, Source
 
 _openai = OpenAI(api_key=settings.openai_api_key)
 

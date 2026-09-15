@@ -18,15 +18,16 @@ tak jak reszta systemu traktuje rzeczy niepewne, zamiast je po cichu ukrywac.
 """
 import json
 import re
+from concurrent.futures import ThreadPoolExecutor
 
 from openai import OpenAI
 
-from app.answer.cytaty import normalize, quote_is_in_chunk
-from app.answer.konflikty import ustalenia_dla, znajdz_konflikty  # noqa: F401  (czytane też z tego modułu)
+from app.answer.cytaty import quote_is_in_chunk
+from app.answer.konflikty import ustalenia_dla, znajdz_konflikty
 from app.config import settings
 from app.db.base import SessionLocal
 from app.db.models import Chunk, Page, Source
-from app.search.index import search
+from app.search.index import szukaj_w_kazdej_ksiazce
 
 _openai = OpenAI(api_key=settings.openai_api_key)
 
@@ -250,39 +251,130 @@ def przepisz_pytanie(historia: list[tuple[str, str]], pytanie: str) -> str:
 def zbierz_fakty_do_pytania(
     db, pytanie: str, source_ids: list[int] | None = None
 ) -> tuple[list[dict], dict, dict, dict]:
-    """Wyszukanie akapitow i wypisanie z nich faktow.
+    """Fakty wypisane OSOBNO z kazdej ksiazki z zakresu.
 
-    Wspolny poczatek dwoch drog: odpowiadania na pytanie redaktora i przegladu
-    nowej ksiazki. Przeglad musi isc dokladnie ta sama sciezka, bo inaczej
-    roznice znalezione automatycznie rzadzilyby sie innymi regulami niz te
-    znalezione przy rozmowie."""
-    chunk_ids = search(pytanie, source_ids=source_ids)
-    if not chunk_ids:
+    Kazda ksiazka jest przeszukiwana i czytana na wlasnych prawach, po czym
+    fakty ida razem do wyboru. Wczesniej byl jeden wspolny ranking akapitow
+    i to sie nie skalowalo: przy dwunastu zaznaczonych ksiazkach na kazda
+    wypadal jeden akapit, a czesc nie dostawala nic, wiec ksiazka slabsza
+    jezykowo nie miala jak dojsc do glosu. Liczba ksiazek nie moze zmieniac
+    zasad."""
+    per_ksiazka = szukaj_w_kazdej_ksiazce(pytanie, source_ids)
+    if not per_ksiazka:
         return [], {}, {}, {}
 
-    chunks = db.query(Chunk).filter(Chunk.id.in_(chunk_ids)).all()
+    wszystkie = [cid for lista in per_ksiazka.values() for cid in lista]
+    chunks = db.query(Chunk).filter(Chunk.id.in_(wszystkie)).all()
     by_id = {c.id: c for c in chunks}
     pages = {p.id: p for p in db.query(Page).filter(Page.id.in_([c.page_id for c in chunks])).all()}
     sources = {s.id: s for s in db.query(Source).filter(Source.id.in_({c.source_id for c in chunks})).all()}
+    poprzednie = _poprzednie_akapity(db, chunks)
 
-    poprzednie = _poprzednie_akapity(db, [by_id[cid] for cid in chunk_ids if cid in by_id])
-    context = [
+    def kontekst(chunk_ids: list[int]) -> list[dict]:
+        return [
+            {
+                "chunk_id": chunk.id,
+                "source": sources[chunk.source_id].title,
+                "page": pages[chunk.page_id].number,
+                # Poczatek poprzedniego akapitu - bez tego model nie wie, czego
+                # dotyczy fragment. Akapit "Niedobor wapnia... Jak zapobiegac:
+                # Podnies pH gleby do okolo 6,0" wyglada jak porada o odczynie
+                # gleby, a jest zaleceniem przy suchej zgniliznie wierzcholkowej
+                # - nagłowek rozdzialu siedzi w akapicie obok.
+                "poprzedni_fragment": poprzednie.get(chunk.id),
+                "text": chunk.text,
+            }
+            for chunk in (by_id[cid] for cid in chunk_ids if cid in by_id)
+        ]
+
+    # Rownolegle, bo przy kilkunastu ksiazkach czekanie po kolei robi z tego
+    # minuty. Kazde wywolanie dotyczy jednej ksiazki i jest male.
+    fakty: list[dict] = []
+    with ThreadPoolExecutor(max_workers=RAZEM_KSIAZEK) as pula:
+        for wynik in pula.map(lambda ids: _zbierz_fakty(pytanie, kontekst(ids)), per_ksiazka.values()):
+            fakty.extend(wynik)
+    return fakty, by_id, pages, sources
+
+
+# Ile ksiazek czytamy naraz. Wyzej nie ma sensu - to zapytania do modelu,
+# nie obliczenia.
+RAZEM_KSIAZEK = 6
+
+# Ile faktow trafia do pisania odpowiedzi. Odpowiedz ma byc krotka, a przy
+# kilkunastu ksiazkach faktow bywa kilkadziesiat.
+MAX_FAKTOW = 12
+
+SEDZIA_PROMPT = """Dostajesz pytanie i fakty wypisane z kilku książek ogrodniczych.
+Wybierz te, z których należy napisać odpowiedź.
+
+Zostawiasz fakt, gdy wprost odpowiada na zadane pytanie.
+
+Odrzucasz fakt, gdy:
+- mówi o czymś innym niż pytanie, choćby był z tej samej dziedziny,
+- powtarza to, co inny wybrany fakt już mówi tymi samymi słowami.
+
+Czego NIE WOLNO Ci odrzucić:
+- faktu, który podaje INNĄ wartość niż fakt już wybrany. Dwie książki mogą się różnić
+  i to jest informacja, nie usterka. Zostaw oba.
+- faktu, który dotyczy innych warunków uprawy niż pozostałe. To nie powtórzenie.
+
+Zwróć numery wybranych faktów, najważniejsze najpierw, najwyżej tyle, ile mówi "ile_najwyzej"."""
+
+_SCHEMA_SEDZIA = {
+    "type": "object",
+    "properties": {"wybrane": {"type": "array", "items": {"type": "integer"}}},
+    "required": ["wybrane"],
+    "additionalProperties": False,
+}
+
+
+def wybierz_fakty(pytanie: str, fakty: list[dict], sources: dict, by_id: dict) -> list[dict]:
+    """Ktore z zebranych faktow ida do odpowiedzi.
+
+    Krok osobny od zbierania, bo zbieranie ma byc szerokie, a odpowiedz krotka.
+    Wczesniej robil to limit akapitow w wyszukiwaniu i dlatego jedno psulo
+    drugie: zawezenie pod krotka odpowiedz odbieralo glos ksiazkom."""
+    if len(fakty) <= MAX_FAKTOW:
+        return fakty
+
+    do_oceny = [
         {
-            "chunk_id": chunk.id,
-            "source": sources[chunk.source_id].title,
-            "page": pages[chunk.page_id].number,
-            # Poczatek poprzedniego akapitu - bez tego model nie wie, czego
-            # dotyczy fragment. Akapit "Niedobor wapnia... Jak zapobiegac:
-            # Podnies pH gleby do okolo 6,0" wyglada jak porada o odczynie
-            # gleby, a jest zaleceniem przy suchej zgniliznie wierzcholkowej
-            # - nagłowek rozdzialu siedzi w akapicie obok.
-            "poprzedni_fragment": poprzednie.get(chunk.id),
-            "text": chunk.text,
+            "nr": numer,
+            "tresc": fakt.get("tresc", ""),
+            "warunek": fakt.get("warunek", ""),
+            "ksiazka": sources[by_id[fakt["chunk_id"]].source_id].title
+            if fakt.get("chunk_id") in by_id
+            else "",
         }
-        # Kolejnosc z wyszukiwania - najtrafniejsze najpierw.
-        for chunk in (by_id[cid] for cid in chunk_ids if cid in by_id)
+        for numer, fakt in enumerate(fakty)
     ]
-    return _zbierz_fakty(pytanie, context), by_id, pages, sources
+    try:
+        odpowiedz = _openai.chat.completions.create(
+            model=settings.analysis_model,
+            temperature=0,
+            messages=[
+                {"role": "system", "content": SEDZIA_PROMPT},
+                {
+                    "role": "user",
+                    "content": json.dumps(
+                        {"pytanie": pytanie, "ile_najwyzej": MAX_FAKTOW, "fakty": do_oceny},
+                        ensure_ascii=False,
+                    ),
+                },
+            ],
+            response_format={
+                "type": "json_schema",
+                "json_schema": {"name": "wybor", "schema": _SCHEMA_SEDZIA, "strict": True},
+            },
+        )
+        wybrane = json.loads(odpowiedz.choices[0].message.content).get("wybrane", [])
+    except Exception:
+        # Gdy sedzia nie odpowie, bierzemy poczatek listy - gorsza odpowiedz
+        # jest lepsza niz brak odpowiedzi.
+        return fakty[:MAX_FAKTOW]
+
+    numery = [n for n in wybrane if isinstance(n, int) and 0 <= n < len(fakty)]
+    return [fakty[n] for n in dict.fromkeys(numery)][:MAX_FAKTOW] or fakty[:MAX_FAKTOW]
 
 
 def answer_question(
@@ -299,11 +391,13 @@ def answer_question(
         if not fakty:
             return _no_data()
 
-        # Roznice miedzy ksiazkami wychodza na jaw wlasnie tutaj: fakty sa juz
-        # zebrane dla jednego pytania, wiec z definicji dotycza tej samej rzeczy.
+        # Roznic szukamy wsrod WSZYSTKICH zebranych faktow, nie tylko tych,
+        # ktore wejda do odpowiedzi. Odpowiedz ma byc krotka, porownanie ksiazek
+        # ma byc szerokie - to dwa rozne cele i nie moga dzielic jednej liczby.
         znajdz_konflikty(db, do_wyszukania, fakty, by_id)
 
-        raw = _napisz_z_faktow(do_wyszukania, fakty, ustalenia_dla(db, list(by_id)))
+        do_pisania = wybierz_fakty(do_wyszukania, fakty, sources, by_id)
+        raw = _napisz_z_faktow(do_wyszukania, do_pisania, ustalenia_dla(db, list(by_id)))
         return _verify(raw, by_id, pages, sources)
     finally:
         db.close()

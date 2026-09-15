@@ -29,7 +29,7 @@ def przejrzyj_nowe_zrodlo(source_id: int) -> int:
 
 
 def odpowiedz_na_pytanie(message_id: int) -> None:
-    from app.answer.build import answer_question
+    from app.answer.build import answer_question, sklej
     from app.db.base import SessionLocal
     from app.db.models import Conversation, Message
 
@@ -62,10 +62,12 @@ def odpowiedz_na_pytanie(message_id: int) -> None:
                 pytanie.text if pytanie else "", source_ids=zakres, historia=historia
             )
             # Tekst odpowiedzi zapisujemy osobno: historia rozmowy korzysta z
-            # niego przy przepisywaniu kolejnego pytania.
-            message.text = " ".join(
-                z["text"] for z in message.answer_json.get("sentences", [])
-            ) or (message.answer_json.get("note") or "")
+            # niego przy przepisywaniu kolejnego pytania. Sklejamy tak samo jak
+            # panel - kawalek niesie wlasna spacje, wiec laczenie ich przez
+            # " ".join() robilo podwojne odstepy.
+            message.text = sklej(message.answer_json.get("sentences", [])) or (
+                message.answer_json.get("note") or ""
+            )
             message.status = "ready"
         except Exception as exc:
             message.answer_json = {"sentences": [], "sources": [], "note": f"Nie udało się: {exc}"}
