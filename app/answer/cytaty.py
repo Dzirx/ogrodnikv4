@@ -22,8 +22,20 @@ def normalize(text: str) -> str:
     return re.sub(r"\s+", " ", text).strip().lower()
 
 
+def bez_odstepow(text: str) -> str:
+    """Sam ciag liter, bez zadnych bialych znakow.
+
+    PDF lamie wyrazy na granicy wiersza, czasem bez myslnika - "doklad\nnie"
+    zostaje jako "doklad nie". Model czyta to jako jedno slowo i ma racje,
+    wiec porownanie po samych literach jest blizsze prawdzie niz porownanie
+    ze spacjami. Podmiana liczby albo dopisane slowo nadal nie przejda."""
+    return re.sub(r"\s+", "", normalize(text))
+
+
 def quote_is_in_chunk(quote: str, chunk_text: str) -> bool:
     normalized = normalize(quote)
     if len(normalized) < MIN_QUOTE_CHARS:
         return False
-    return normalized in normalize(chunk_text)
+    if normalized in normalize(chunk_text):
+        return True
+    return bez_odstepow(quote) in bez_odstepow(chunk_text)

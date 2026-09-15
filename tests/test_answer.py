@@ -114,3 +114,19 @@ def test_tresc_bez_przypisu_spoiwem_nie_jest():
     assert not jest_spoiwem(", a w upały częściej")
     assert not jest_spoiwem("zawsze pod krzew")
     assert not jest_spoiwem(" — 2-3 razy w tygodniu")
+
+
+def test_cytat_przechodzi_mimo_wyrazu_zlamanego_bez_myslnika():
+    """PDF łamie wyraz na granicy wiersza, czasem bez myślnika: "dokład\\nnie"
+    zostaje jako "dokład nie". Model czyta to jako jedno słowo i ma rację."""
+    akapit = "System kroplowania kieruje wodę dokład nie pod korzeń rośliny."
+
+    assert quote_is_in_chunk("kieruje wodę dokładnie pod korzeń", akapit)
+
+
+def test_zmieniona_liczba_nie_przechodzi_takze_bez_odstepow():
+    """Rozluźnienie dotyczy odstępów, nie treści."""
+    akapit = "Nasiona kiełkują w temperaturze 22-28°C przy stałej wilgotności."
+
+    assert not quote_is_in_chunk("kiełkują w temperaturze 30-35°C", akapit)
+    assert not quote_is_in_chunk("kiełkują w temperaturze 22-28°C zawsze", akapit)

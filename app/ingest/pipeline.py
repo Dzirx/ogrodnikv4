@@ -130,6 +130,15 @@ def _extract_pages(kind: str, data: bytes) -> list[str]:
     Wylacznie warstwa tekstowa, bez OCR - skany nie wejda i trzeba to
     powiedziec klientowi wprost, zamiast udawac, ze dziala."""
     if kind == "pdf":
+        # TEXT_INHIBIT_SPACES jest tu konieczne, nie kosmetyczne. Bez tej flagi
+        # PyMuPDF wstawia spacje wszedzie tam, gdzie w PDF-ie jest wiekszy
+        # odstep miedzy literami - w ksiazce Sulka dawalo to "Poleca m podlewa
+        # c pomido ry system em lin ii kroplujacyc h" w co trzecim akapicie.
+        # Psulo to wszystko naraz: wyszukiwanie po slowach nie trafialo w
+        # "kroplujacych", wektor liczyl sie z siekanego tekstu, a cytat modelu
+        # (przeczytany poprawnie, bo litery sa na miejscu) nie zgadzal sie
+        # z akapitem i odpowiedz dostawala "Nie znalazlem w zrodle".
+        flagi = fitz.TEXTFLAGS_TEXT | fitz.TEXT_INHIBIT_SPACES | fitz.TEXT_DEHYPHENATE
         with fitz.open(stream=data, filetype="pdf") as document:
-            return [page.get_text() for page in document]
+            return [page.get_text("text", flags=flagi) for page in document]
     return [data.decode("utf-8")]
