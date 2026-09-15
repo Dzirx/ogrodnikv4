@@ -153,6 +153,29 @@ Dobrze: "Lej pod korzeń, nigdy na liście. Najlepsza jest deszczówka albo woda
          Jeśli planujesz zbiór jesienny, wysiewaj nasiona w czerwcu."
 Dobrze: "Na zbiór letni wysiewaj od kwietnia. Na jesienny miesiąc-dwa później."
 
+JAK ODDAJESZ ODPOWIEDŹ
+Piszesz JEDEN płynny akapit. Oddajesz go pocięty na kawałki, ale to nadal jeden ciąg
+tekstu — sklejone kawałki muszą się czytać jak zwykła wypowiedź.
+
+Tniesz TYLKO tam, gdzie kończy się zasięg przypisu. Kawałek to ten fragment zdania,
+który stoi na tych samych faktach. Zdanie złożone dzieli się zwykle na dwa albo trzy
+kawałki i tak ma być — to nie są osobne zdania.
+
+Kawałek zaczynający się w środku zdania zaczyna się od spacji albo od znaku
+przestankowego. Inaczej słowa się skleją.
+
+Każdy kawałek podaje numery faktów, na których stoi. Jeśli następny kawałek nadal stoi
+na tym samym fakcie, powtórz ten numer. Kawałek bez numeru to kawałek bez pokrycia
+w książce — takiego nie wolno napisać.
+
+Przykład dla faktów 0: "podlewać 2-3 razy w tygodniu, w czasie kwitnienia",
+1: "częściej w upały i pod osłonami", 2: "lać pod krzew, nie moczyć liści":
+
+  {"tekst": "Podlewaj 2-3 razy w tygodniu, a w upały i pod osłonami częściej", "fakty": [0, 1]}
+  {"tekst": " — zawsze pod krzew, nigdy na liście.", "fakty": [2]}
+
+Zwróć uwagę: trzy fakty dały jedno zdanie, nie trzy.
+
 GRANICA SWOBODY — to najważniejsze
 Wolno Ci zmienić SPOSÓB powiedzenia. Nie wolno dodać ani jednej informacji, której nie ma
 w faktach.
@@ -194,44 +217,22 @@ _SCHEMA_FAKTY = {
 _SCHEMA_ODPOWIEDZ = {
     "type": "object",
     "properties": {
-        "sentences": {
+        "czesci": {
             "type": "array",
             "items": {
                 "type": "object",
                 "properties": {
-                    "text": {"type": "string"},
+                    "tekst": {"type": "string"},
                     "fakty": {"type": "array", "items": {"type": "integer"}},
                 },
-                "required": ["text", "fakty"],
+                "required": ["tekst", "fakty"],
                 "additionalProperties": False,
             },
         }
     },
-    "required": ["sentences"],
+    "required": ["czesci"],
     "additionalProperties": False,
 }
-
-_SCHEMA = {
-    "type": "object",
-    "properties": {
-        "sentences": {
-            "type": "array",
-            "items": {
-                "type": "object",
-                "properties": {
-                    "text": {"type": "string"},
-                    "chunk_id": {"type": "integer"},
-                    "quote": {"type": "string"},
-                },
-                "required": ["text", "chunk_id", "quote"],
-                "additionalProperties": False,
-            },
-        }
-    },
-    "required": ["sentences"],
-    "additionalProperties": False,
-}
-
 
 def normalize(text: str) -> str:
     """Do porownania cytatu z akapitem.
@@ -433,81 +434,73 @@ def _napisz_z_faktow(question: str, fakty: list[dict]) -> dict:
             "json_schema": {"name": "odpowiedz", "schema": _SCHEMA_ODPOWIEDZ, "strict": True},
         },
     )
-    napisane = json.loads(odpowiedz.choices[0].message.content).get("sentences", [])
+    napisane = json.loads(odpowiedz.choices[0].message.content).get("czesci", [])
 
-    # Cytat wraca do zdania przez numer faktu - dzieki temu weryfikacja
-    # dziala tak samo jak przedtem.
-    zdania = []
-    for zdanie in napisane:
-        # Zdanie moze laczyc kilka faktow - inaczej kazda linijka wygladalaby
-        # jak pisana osobno, bo model musialby rozbijac wypowiedz na tyle zdan,
-        # ile dostal faktow. Cytat bierzemy z pierwszego wskazanego faktu.
-        numery = [n for n in zdanie.get("fakty", []) if isinstance(n, int) and 0 <= n < len(fakty)]
-        if not numery:
-            continue
-        fakt = fakty[numery[0]]
-        zdania.append(
-            {
-                "text": zdanie.get("text", ""),
-                "chunk_id": fakt.get("chunk_id"),
-                "quote": fakt.get("quote", ""),
-            }
-        )
-    return {"sentences": zdania}
+    # Cytat wraca do kawalka przez numer faktu. Kawalek moze stac na kilku
+    # faktach naraz - i o to chodzi: jednostka tekstu jest fragment zdania,
+    # nie cale zdanie. Gdy jednostka bylo zdanie, model dostawal liste faktow
+    # i pole na liste zdan, wiec pisal jeden fakt = jedno zdanie, a odpowiedz
+    # wygladala jak wyliczanka, cokolwiek mowil prompt.
+    czesci = []
+    for czesc in napisane:
+        numery = [n for n in czesc.get("fakty", []) if isinstance(n, int) and 0 <= n < len(fakty)]
+        zrodla: list[dict] = []
+        for numer in numery:
+            fakt = fakty[numer]
+            # Dwa fakty z tego samego akapitu to jeden przypis, nie dwa.
+            if any(z["chunk_id"] == fakt.get("chunk_id") for z in zrodla):
+                continue
+            zrodla.append({"chunk_id": fakt.get("chunk_id"), "quote": fakt.get("quote", "")})
+        czesci.append({"text": czesc.get("tekst", ""), "zrodla": zrodla})
+    return {"czesci": czesci}
+
+
+# Przed tymi znakami nie stawiamy spacji przy sklejaniu kawalkow.
+BEZ_SPACJI = ',.;:!?…)»"\''
 
 
 def _verify(raw: dict, by_id: dict, pages: dict, sources: dict) -> dict:
     """Sprawdza kazdy cytat i sklada odpowiedz do pokazania."""
-    sentences = []
-    used_chunks = []
+    czesci = []
+    used_chunks: list[int] = []
 
-    for item in raw.get("sentences", []):
-        chunk = by_id.get(item.get("chunk_id"))
-        if chunk is None:
-            # Model wskazal akapit, ktorego mu nie dalismy.
-            sentences.append(
+    for item in raw.get("czesci", []):
+        zrodla = []
+        for wskazanie in item.get("zrodla", []):
+            chunk = by_id.get(wskazanie.get("chunk_id"))
+            if chunk is None:
+                # Model wskazal akapit, ktorego mu nie dalismy.
+                continue
+            if chunk.id not in used_chunks:
+                used_chunks.append(chunk.id)
+            page = pages[chunk.page_id]
+            source = sources[chunk.source_id]
+            zrodla.append(
                 {
-                    "text": item.get("text", ""),
-                    "verified": False,
-                    "styl": sprawdz(item.get("text", "")),
-                    "source": None,
-                }
-            )
-            continue
-
-        verified = quote_is_in_chunk(item.get("quote", ""), chunk.text)
-        page = pages[chunk.page_id]
-        source = sources[chunk.source_id]
-        if chunk.id not in used_chunks:
-            used_chunks.append(chunk.id)
-
-        sentences.append(
-            {
-                "text": item.get("text", ""),
-                "verified": verified,
-                # Uwagi do języka - klient czyta uchem człowieka starszej daty
-                # i wyłapuje zdania urzędowe. Prompt o to prosi, ten kod
-                # sprawdza, czy model posłuchał.
-                "styl": sprawdz(item.get("text", "")),
-                "source": {
                     "chunk_id": chunk.id,
                     "source_id": source.id,
                     "source_title": source.title,
                     "source_kind": source.kind,
                     "page": page.number,
-                    "quote": item.get("quote", ""),
+                    "quote": wskazanie.get("quote", ""),
+                    "verified": quote_is_in_chunk(wskazanie.get("quote", ""), chunk.text),
                     "marker": used_chunks.index(chunk.id) + 1,
-                },
+                }
+            )
+
+        czesci.append(
+            {
+                "text": item.get("text", ""),
+                # Kawalek bez zrodla to kawalek bez pokrycia - traktujemy go
+                # tak samo jak zmyslony cytat.
+                "verified": bool(zrodla) and all(z["verified"] for z in zrodla),
+                "sources": zrodla,
+                "styl": [],
             }
         )
 
-    if not sentences:
+    if not czesci:
         return _no_data()
-
-    # Uwagi widoczne dopiero w calej odpowiedzi (np. dwa zdania zaczynajace sie
-    # tak samo) dokladamy do zdania, ktorego dotycza.
-    for numer, uwagi in sprawdz_odpowiedz([z["text"] for z in sentences]).items():
-        sentences[numer]["styl"] = sentences[numer].get("styl", []) + uwagi
 
     source_list = []
     for index, chunk_id in enumerate(used_chunks, start=1):
@@ -524,4 +517,42 @@ def _verify(raw: dict, by_id: dict, pages: dict, sources: dict) -> dict:
             }
         )
 
-    return {"sentences": sentences, "sources": source_list, "note": None}
+    # Uwagi do jezyka liczymy na CALYM tekscie, rozbitym na prawdziwe zdania.
+    # Kawalek to czesc zdania, wiec liczenie dlugosci czy powtorzonych poczatkow
+    # na kawalkach dawaloby bzdury.
+    return {
+        "sentences": czesci,
+        "styl": _uwagi_do_jezyka(sklej(czesci)),
+        "sources": source_list,
+        "note": None,
+    }
+
+
+def sklej(czesci: list[dict]) -> str:
+    """Kawalki sklejone w jeden tekst - z brakujaca spacja tam, gdzie trzeba.
+
+    Model ma zaczynac kawalek od spacji, jesli stoi w srodku zdania. Czasem
+    o tym zapomina, a sklejone bez spacji slowa wygladaja na blad programu."""
+    tekst = ""
+    for czesc in czesci:
+        # Spacja na koncu kawalka odkleilaby przypis od slowa, przy ktorym stoi,
+        # i przykleila go do nastepnego zdania: "owoców. ¹Podczas upalow".
+        kawalek = czesc.get("text", "").rstrip()
+        if tekst and kawalek and not kawalek[0].isspace() and kawalek[0] not in BEZ_SPACJI and not tekst.endswith(" "):
+            kawalek = " " + kawalek
+        tekst += kawalek
+    return tekst
+
+
+_KONIEC_ZDANIA = re.compile(r"(?<=[.!?])\s+")
+
+
+def _uwagi_do_jezyka(tekst: str) -> list[dict]:
+    zdania = [z.strip() for z in _KONIEC_ZDANIA.split(tekst) if z.strip()]
+    dodatkowe = sprawdz_odpowiedz(zdania)
+    uwagi = []
+    for numer, zdanie in enumerate(zdania):
+        lista = sprawdz(zdanie) + dodatkowe.get(numer, [])
+        if lista:
+            uwagi.append({"text": zdanie, "styl": lista})
+    return uwagi

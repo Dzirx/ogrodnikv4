@@ -12,6 +12,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 
+from app.answer.build import BEZ_SPACJI
 from app.db.base import get_db
 from app.db.models import Chunk, Conflict, Conversation, ConversationSource, Message, Page, Source
 from app.ingest.pipeline import add_source
@@ -96,6 +97,43 @@ def rozmowa(
     )
 
 
+def _zrodla_czesci(czesc: dict) -> list[dict]:
+    """Przypisy jednego kawałka tekstu.
+
+    Starsze rozmowy mają w bazie pojedyncze "source" przy całym zdaniu — wtedy
+    jednostką tekstu było zdanie, nie fragment zdania. Czytamy jedno i drugie,
+    żeby zapisane odpowiedzi nadal się wyświetlały."""
+    if czesc.get("sources") is not None:
+        return czesc["sources"]
+    zrodlo = czesc.get("source")
+    return [zrodlo] if zrodlo else []
+
+
+def czesci_odpowiedzi(odpowiedz: dict) -> list[dict]:
+    """Kawałki odpowiedzi gotowe do sklejenia w akapit.
+
+    Model oddaje tekst pocięty tam, gdzie kończy się zasięg przypisu — kawałek
+    to zwykle część zdania, nie całe zdanie. Brakującą spację dokładamy tutaj,
+    bo model czasem o niej zapomina, a sklejone słowa wyglądają na błąd
+    programu."""
+    wynik: list[dict] = []
+    for czesc in odpowiedz.get("sentences", []):
+        # Bez ucinania spacji na koncu przypis odklei sie od slowa, przy ktorym
+        # stoi, i przyklei do nastepnego zdania: "owoców. ¹Podczas upalow".
+        tekst = czesc.get("text", "").rstrip()
+        poprzedni = wynik[-1]["text"] if wynik else ""
+        if poprzedni and tekst and not tekst[0].isspace() and tekst[0] not in BEZ_SPACJI and not poprzedni.endswith(" "):
+            tekst = " " + tekst
+        wynik.append(
+            {
+                "text": tekst,
+                "verified": czesc.get("verified", False),
+                "zrodla": _zrodla_czesci(czesc),
+            }
+        )
+    return wynik
+
+
 def tekst_ze_znacznikami(odpowiedz: dict) -> str:
     """Tekst odpowiedzi z przypisami w postaci [1], [2] - do pola edycji.
 
@@ -103,12 +141,11 @@ def tekst_ze_znacznikami(odpowiedz: dict) -> str:
     zostać. Bez tego po edycji nie dałoby się ich umieścić w treści, bo tekst
     jest już jego i nie wiadomo, które zdanie z którego akapitu pochodzi -
     a przypisy na marginesie to nie to samo, co przypis przy zdaniu."""
-    czesci = []
-    for zdanie in odpowiedz.get("sentences", []):
-        tekst = zdanie.get("text", "")
-        zrodlo = zdanie.get("source")
-        czesci.append(f"{tekst} [{zrodlo['marker']}]" if zrodlo else tekst)
-    return " ".join(czesci)
+    kawalki = []
+    for czesc in czesci_odpowiedzi(odpowiedz):
+        kawalki.append(czesc["text"])
+        kawalki.extend(f"[{zrodlo['marker']}]" for zrodlo in czesc["zrodla"])
+    return "".join(kawalki)
 
 
 _ZNACZNIK_RE = re.compile(r"\[(\d{1,2})\]")
@@ -222,9 +259,12 @@ def _podglad(
         wiadomosc = db.get(Message, message_id)
         zdania = (wiadomosc.answer_json or {}).get("sentences", []) if wiadomosc else []
         if 0 <= zdanie < len(zdania):
-            cytat = (zdania[zdanie].get("source") or {}).get("quote")
-            if cytat:
-                do_zaznaczenia = cytat
+            # Kawalek moze miec kilka przypisow - bierzemy cytat z tego, ktory
+            # prowadzi do ogladanego akapitu.
+            for zrodlo in _zrodla_czesci(zdania[zdanie]):
+                if zrodlo.get("chunk_id") == chunk_id and zrodlo.get("quote"):
+                    do_zaznaczenia = zrodlo["quote"]
+                    break
     page = db.get(Page, chunk.page_id)
     source = db.get(Source, chunk.source_id)
     return {
@@ -522,5 +562,6 @@ def rozstrzygnij(
 
 
 # Funkcje pomocnicze dla szablonow - przypisane na koncu, bo definiowane wyzej.
+templates.env.globals["czesci_odpowiedzi"] = czesci_odpowiedzi
 templates.env.globals["tekst_ze_znacznikami"] = tekst_ze_znacznikami
 templates.env.globals["rozbij_znaczniki"] = rozbij_znaczniki

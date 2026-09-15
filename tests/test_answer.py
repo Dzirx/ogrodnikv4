@@ -77,3 +77,20 @@ def test_przepisanie_wraca_do_oryginalu_gdy_model_zawiedzie(monkeypatch):
     historia = [("user", "wysiew pomidora"), ("assistant", "Wysiewa się w marcu.")]
 
     assert build.przepisz_pytanie(historia, "a w tunelu?") == "a w tunelu?"
+
+
+def test_sklejone_kawalki_daja_jeden_akapit():
+    """Jednostką tekstu jest kawałek zdania, nie zdanie. Sklejone muszą się
+    czytać jak zwykła wypowiedź, także gdy model zapomni o spacji."""
+    from app.answer.build import sklej
+
+    czesci = [
+        {"text": "Podlewaj 2-3 razy w tygodniu"},
+        {"text": " — zawsze pod krzew."},
+        {"text": "Najlepsza jest deszczówka"},
+        {"text": ", nie woda z kranu."},
+    ]
+
+    assert sklej(czesci) == (
+        "Podlewaj 2-3 razy w tygodniu — zawsze pod krzew. Najlepsza jest deszczówka, nie woda z kranu."
+    )

@@ -184,12 +184,24 @@
               </p>
               {% else %}
               <p>
-                {%- for zdanie in w.answer_json.sentences -%}
-                  <span class="zdanie{% if not zdanie.verified %} niepotwierdzone{% endif %}">{{ zdanie.text }}</span>{% if zdanie.source %}<a class="znacznik" href="?podglad={{ zdanie.source.chunk_id }}&w={{ w.id }}&z={{ loop.index0 }}" title="{{ zdanie.source.source_title }}, strona {{ zdanie.source.page }}">{{ zdanie.source.marker }}</a>{% endif %}{{ " " }}
+                {#- Jednostka tekstu jest KAWALEK zdania, nie zdanie. Dopoki
+                    modelowi kazalismy oddawac tablice zdan, pisal jeden fakt =
+                    jedno zdanie i odpowiedz wygladala jak wyliczanka. Teraz
+                    pisze jeden akapit, a przypis siada tam, gdzie konczy sie
+                    jego zasieg - w srodku zdania takze. -#}
+                {%- for czesc in czesci_odpowiedzi(w.answer_json) -%}
+                  {%- set nr = loop.index0 -%}
+                  <span class="zdanie{% if not czesc.verified %} niepotwierdzone{% endif %}">{{ czesc.text }}</span>
+                  {%- for zrodlo in czesc.zrodla -%}
+                    <a class="znacznik" href="?podglad={{ zrodlo.chunk_id }}&w={{ w.id }}&z={{ nr }}" title="{{ zrodlo.source_title }}, strona {{ zrodlo.page }}">{{ zrodlo.marker }}</a>
+                  {%- endfor -%}
                 {%- endfor -%}
               </p>
               {% endif %}
-              {% set uwagi = w.answer_json.sentences | selectattr("styl") | list %}
+              {# Uwagi do jezyka dotycza calych zdan gotowego akapitu - kawalek to czesc
+                 zdania, wiec liczenie ich na kawalkach dawaloby bzdury. Starsze rozmowy
+                 maja uwagi przy zdaniach i tak je czytamy. #}
+              {% set uwagi = w.answer_json.styl or (w.answer_json.sentences | selectattr("styl") | list) %}
               {% set niepewne = w.answer_json.sentences | rejectattr("verified") | list %}
               {% if niepewne %}
               <p><small class="uwaga-stylu">Nie znalazłem w źródle: {{ niepewne | map(attribute="text") | join(" · ") }}</small></p>
