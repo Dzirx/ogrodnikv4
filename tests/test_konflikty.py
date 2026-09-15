@@ -10,7 +10,15 @@ o coś pyta.
 import pytest
 
 import app.answer.konflikty as K
-from app.answer.konflikty import _zbuduj, odcisk, rozstrzygaj_zakresy, ustalenia_dla, warunek, zachodza_na_siebie
+from app.answer.konflikty import (
+    _zbuduj,
+    czy_spor,
+    odcisk,
+    rozstrzygaj_zakresy,
+    ustalenia_dla,
+    warunek,
+    zachodza_na_siebie,
+)
 from app.db.base import SessionLocal
 from app.db.models import Chunk, Conflict, ConflictOption, Page, Source
 
@@ -248,3 +256,46 @@ def test_ten_sam_zakres_przepuszcza_spor():
 def test_dwa_zdania_ogolne_przepuszczaja_spor():
     assert rozstrzygaj_zakresy("", "", ten_sam=False)
     assert rozstrzygaj_zakresy("brak", "nie dotyczy", ten_sam=False)
+
+
+def _rozbior(**zmiany):
+    """Rozbiór dwóch zdań w postaci, w jakiej oddaje go model - domyślnie taki,
+    który przechodzi wszystkie warunki."""
+    podstawa = {
+        "pytanie_pierwszego": "jaki odczyn gleby",
+        "pytanie_drugiego": "jaki odczyn gleby",
+        "to_samo_pytanie": True,
+        "zakres_pierwszego": "",
+        "zakres_drugiego": "",
+        "ten_sam_przypadek": True,
+        "da_sie_oba": False,
+        "ocena": "spor",
+    }
+    podstawa.update(zmiany)
+    return podstawa
+
+
+def test_zdania_o_roznych_pytaniach_to_nie_spor():
+    """Zgłoszone z panelu: "nie używaj zraszaczy" kontra "podlewaj linią
+    kroplującą". Jeden temat, dwa różne pytania - czego nie stosować i czym
+    podlewać. Oba zdania ogólne, więc bramka zakresów ich nie zatrzymała."""
+    assert not czy_spor(
+        _rozbior(
+            pytanie_pierwszego="czego nie stosować do podlewania",
+            pytanie_drugiego="czym podlewać",
+            to_samo_pytanie=False,
+        )
+    )
+
+
+def test_gdy_da_sie_zastosowac_oba_to_nie_spor():
+    """Dwa zalecenia, które można spełnić naraz, nie wymagają niczyjej decyzji."""
+    assert not czy_spor(_rozbior(da_sie_oba=True))
+
+
+def test_spor_przechodzi_gdy_wszystkie_warunki_spelnione():
+    assert czy_spor(_rozbior())
+
+
+def test_ocena_zgodne_zamyka_sprawe_mimo_reszty():
+    assert not czy_spor(_rozbior(ocena="zgodne"))

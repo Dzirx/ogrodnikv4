@@ -119,49 +119,63 @@ def odcisk(temat: str, wartosci: list[str]) -> str:
 
 
 SPRAWDZ_PROMPT = """Dostajesz dwa zdania wypisane z dwóch różnych książek ogrodniczych.
+Nie oceniaj od razu — najpierw je rozbierz.
 
-Najpierw dla KAŻDEGO zdania wypisz zakres, w którym ono obowiązuje: rodzaj uprawy
-(grunt, tunel, pojemnik), pogodę, porę dnia lub roku, fazę rozwoju rośliny, miejsce.
+"pytanie_pierwszego" i "pytanie_drugiego" — na jakie pytanie ogrodnika odpowiada każde
+z nich. Krótko, własnymi słowami: "czym podlewać", "jak często podlewać", "jaki odczyn
+gleby", "kiedy wysadzać rozsadę".
+
+"to_samo_pytanie" — czy oba odpowiadają na TO SAMO pytanie. "Nie używaj zraszaczy"
+odpowiada na pytanie, czego nie stosować; "podlewaj linią kroplującą" na pytanie, czym
+podlewać. To dwa różne pytania, choć jeden temat.
+
+"zakres_pierwszego" i "zakres_drugiego" — w jakich warunkach obowiązuje każde zdanie:
+rodzaj uprawy (grunt, tunel, pojemnik), pogoda, pora dnia lub roku, faza rozwoju.
 Bierz to wyłącznie z samego zdania, nie dopowiadaj. Gdy zdanie mówi o zasadzie ogólnej,
-bez żadnego takiego zawężenia, wpisz pusty napis.
+bez zawężenia — pusty napis.
 
-Potem powiedz, czy oba zakresy to ten sam przypadek.
+"ten_sam_przypadek" — czy oba zakresy to ta sama sytuacja.
 
-Na koniec oceń: czy ogrodnik musi wybrać jedno albo drugie, bo zastosowanie obu naraz
-jest niemożliwe?
+"da_sie_oba" — czy ogrodnik może zastosować OBA zalecenia naraz, w tym samym ogrodzie,
+nie łamiąc żadnego. "Nie zraszaj" i "podlewaj kroplująco" da się spełnić jednocześnie.
+"Podlewaj 2-3 razy w tygodniu" i "podlewaj codziennie" nie da się.
 
-Odpowiedz "zgodne", jeśli da się je pogodzić w jakikolwiek sposób. W szczególności:
-- jedno jest ogólne, drugie je doprecyzowuje,
-- mówią o różnych rzeczach, etapach albo porach,
-- podają zakresy liczbowe mające część wspólną,
-- to ta sama treść innymi słowami,
-- oba zalecenia można spełnić jednocześnie.
-
-Odpowiedz "spor" tylko wtedy, gdy spełnienie jednego ŁAMIE drugie.
-
-Twoim zadaniem jest obalić spór, nie potwierdzić. Przy jakiejkolwiek wątpliwości: "zgodne"."""
+"ocena" — "spor" tylko wtedy, gdy spełnienie jednego ŁAMIE drugie. Przy jakiejkolwiek
+wątpliwości "zgodne". Twoim zadaniem jest obalić spór, nie potwierdzić."""
 
 _SCHEMA_SPRAWDZ = {
     "type": "object",
     "properties": {
+        "pytanie_pierwszego": {"type": "string"},
+        "pytanie_drugiego": {"type": "string"},
+        "to_samo_pytanie": {"type": "boolean"},
         "zakres_pierwszego": {"type": "string"},
         "zakres_drugiego": {"type": "string"},
         "ten_sam_przypadek": {"type": "boolean"},
+        "da_sie_oba": {"type": "boolean"},
         "ocena": {"type": "string", "enum": ["spor", "zgodne"]},
     },
-    "required": ["zakres_pierwszego", "zakres_drugiego", "ten_sam_przypadek", "ocena"],
+    "required": [
+        "pytanie_pierwszego",
+        "pytanie_drugiego",
+        "to_samo_pytanie",
+        "zakres_pierwszego",
+        "zakres_drugiego",
+        "ten_sam_przypadek",
+        "da_sie_oba",
+        "ocena",
+    ],
     "additionalProperties": False,
 }
 
 
 def rozstrzygaj_zakresy(zakres_a: str, zakres_b: str, ten_sam: bool) -> bool:
-    """Czy dwa zdania w ogole mowia o tym samym przypadku.
+    """Czy dwa zdania mowia o tym samym przypadku.
 
-    To reguly kodu, nie zdanie modelu - model podaje same zakresy, decyzja
-    zapada tutaj. Powod jest konkretny: przy podlewaniu obie oceny uznaly za
-    spor "unikaj podlewania wieczorem" i "w pojemnikach, w upalne dni podlewaj
-    rano i wieczorem". Jedno mowi o pojemnikach w upaly, drugie o wieczorach
-    w ogole - to dwa rozne przypadki, a nie sprzecznosc."""
+    Reguly kodu, nie zdanie modelu - model podaje same zakresy, decyzja zapada
+    tutaj. Powod byl konkretny: przy podlewaniu obie oceny uznaly za spor
+    "unikaj podlewania wieczorem" i "w pojemnikach, w upalne dni podlewaj rano
+    i wieczorem". Jedno mowi o pojemnikach w upaly, drugie o wieczorach w ogole."""
     a, b = warunek(zakres_a), warunek(zakres_b)
     # Jedno zdanie ogolne, drugie o wezszym przypadku - to doprecyzowanie.
     if bool(a) != bool(b):
@@ -175,10 +189,14 @@ def rozstrzygaj_zakresy(zakres_a: str, zakres_b: str, ten_sam: bool) -> bool:
 def naprawde_sprzeczne(cytat_a: str, cytat_b: str) -> bool:
     """Druga, niezalezna ocena - na samych cytatach ze zrodel.
 
-    Pierwsza ocena szuka sporow i znajduje ich za duzo. Ta dostaje wylacznie
-    dwa zdania, bez slowa "spor" w pytaniu, i ma je pogodzic. Dopiero gdy obie
-    zgodza sie co do sprzecznosci, a zakresy przejda przez regule kodu, pytamy
-    czlowieka."""
+    Trzy warunki, kazdy sprawdzany osobno w kodzie. Model tylko rozbiera zdania
+    na czesci: na jakie pytanie odpowiadaja, w jakich warunkach obowiazuja i czy
+    da sie spelnic oba naraz.
+
+    Trzeci warunek doszedl po fałszywym sporze zgloszonym z panelu: "nie uzywaj
+    zraszaczy" kontra "podlewaj linia kroplujaca". Oba zdania sa ogolne i o tym
+    samym temacie, wiec bramka zakresow ich nie zatrzymala - a odpowiadaja na
+    dwa rozne pytania i da sie je spelnic jednoczesnie."""
     try:
         odpowiedz = _openai.chat.completions.create(
             model=settings.analysis_model,
@@ -198,13 +216,27 @@ def naprawde_sprzeczne(cytat_a: str, cytat_b: str) -> bool:
         # jednego wywolania.
         return False
 
+    return czy_spor(wynik)
+
+
+def czy_spor(rozbior: dict) -> bool:
+    """Decyzja kodu na podstawie tego, co model wypisal o obu zdaniach.
+
+    Osobno, bo to jest miejsce, w ktorym zapada rozstrzygniecie - i jedyne,
+    ktore da sie sprawdzic testem bez pytania modelu."""
+    # Odpowiadaja na rozne pytania - moga byc oba prawdziwe, nie ma czego wybierac.
+    if not rozbior.get("to_samo_pytanie"):
+        return False
+    # Da sie zastosowac oba naraz - to nie spor, tylko dwa zalecenia.
+    if rozbior.get("da_sie_oba"):
+        return False
     if not rozstrzygaj_zakresy(
-        wynik.get("zakres_pierwszego", ""),
-        wynik.get("zakres_drugiego", ""),
-        bool(wynik.get("ten_sam_przypadek")),
+        rozbior.get("zakres_pierwszego", ""),
+        rozbior.get("zakres_drugiego", ""),
+        bool(rozbior.get("ten_sam_przypadek")),
     ):
         return False
-    return wynik.get("ocena") == "spor"
+    return rozbior.get("ocena") == "spor"
 
 
 def znajdz_konflikty(db: Session, pytanie: str, fakty: list[dict], by_id: dict[int, Chunk]) -> list[Conflict]:
