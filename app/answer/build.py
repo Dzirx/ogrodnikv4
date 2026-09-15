@@ -20,7 +20,6 @@ from openai import OpenAI
 from app.config import settings
 from app.db.base import SessionLocal
 from app.db.models import Chunk, Page, Source
-from app.answer.styl import sprawdz, sprawdz_odpowiedz
 from app.search.index import search
 
 _openai = OpenAI(api_key=settings.openai_api_key)
@@ -522,7 +521,6 @@ def _verify(raw: dict, by_id: dict, pages: dict, sources: dict) -> dict:
                 "verified": spoiwo or (bool(zrodla) and all(z["verified"] for z in zrodla)),
                 "spoiwo": spoiwo,
                 "sources": zrodla,
-                "styl": [],
             }
         )
 
@@ -544,15 +542,7 @@ def _verify(raw: dict, by_id: dict, pages: dict, sources: dict) -> dict:
             }
         )
 
-    # Uwagi do jezyka liczymy na CALYM tekscie, rozbitym na prawdziwe zdania.
-    # Kawalek to czesc zdania, wiec liczenie dlugosci czy powtorzonych poczatkow
-    # na kawalkach dawaloby bzdury.
-    return {
-        "sentences": czesci,
-        "styl": _uwagi_do_jezyka(sklej(czesci)),
-        "sources": source_list,
-        "note": None,
-    }
+    return {"sentences": czesci, "sources": source_list, "note": None}
 
 
 def sklej(czesci: list[dict]) -> str:
@@ -569,17 +559,3 @@ def sklej(czesci: list[dict]) -> str:
             kawalek = " " + kawalek
         tekst += kawalek
     return tekst
-
-
-_KONIEC_ZDANIA = re.compile(r"(?<=[.!?])\s+")
-
-
-def _uwagi_do_jezyka(tekst: str) -> list[dict]:
-    zdania = [z.strip() for z in _KONIEC_ZDANIA.split(tekst) if z.strip()]
-    dodatkowe = sprawdz_odpowiedz(zdania)
-    uwagi = []
-    for numer, zdanie in enumerate(zdania):
-        lista = sprawdz(zdanie) + dodatkowe.get(numer, [])
-        if lista:
-            uwagi.append({"text": zdanie, "styl": lista})
-    return uwagi

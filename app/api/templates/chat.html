@@ -67,7 +67,6 @@
   .odpowiedz { margin-bottom: 2rem; }
   .odpowiedz p { margin: 0 0 0.8rem; }
   .odpowiedz .zdanie.niepotwierdzone { background: var(--uwaga-tlo); }
-  .uwagi-jezyka { margin-top: 0.5rem; }
   .narzedzia-odpowiedzi { margin: 0.3rem 0 0; }
   .ikona {
     background: none; border: 1px solid var(--ramka); color: var(--przygaszony);
@@ -91,8 +90,6 @@
   .przyciski-okna { display: flex; gap: 0.5rem; margin-bottom: 0; }
   @media (max-width: 900px) { .tekst-ze-zrodlami { grid-template-columns: 1fr; } .zrodla-obok { border-left: 0; padding-left: 0; } }
   .tekst-poprawiony { border-left: 3px solid var(--akcent); padding-left: 0.7rem; }
-  .uwagi-jezyka > summary { cursor: pointer; color: var(--przygaszony); font-size: 0.85rem; }
-  .uwagi-jezyka ul { margin: 0.4rem 0 0; padding-left: 1.2rem; font-size: 0.85rem; color: var(--przygaszony); }
   .niepotwierdzone { background: var(--uwaga-tlo); border-left: 3px solid var(--uwaga); padding-left: 0.6rem; }
   .znacznik {
     display: inline-block; background: var(--akcent-jasny); color: var(--akcent);
@@ -104,7 +101,7 @@
   .akapit-zrodla mark { background: #ffe680; padding: 0 0.1rem; }
   .podglad-strona { width: 100%; border: 1px solid var(--ramka); border-radius: 4px; }
   .cytat { font-style: italic; color: var(--przygaszony); border-left: 2px solid var(--ramka); padding-left: 0.7rem; margin: 0.5rem 0; }
-  .uwaga-stylu { color: var(--uwaga); }
+  .brak-w-zrodle { color: var(--uwaga); }
   .czekam { color: var(--przygaszony); font-style: italic; }
   @media (max-width: 1100px) { .uklad, .uklad.bez-podgladu { grid-template-columns: 1fr; } }
 </style>
@@ -198,23 +195,10 @@
                 {%- endfor -%}
               </p>
               {% endif %}
-              {# Uwagi do jezyka dotycza calych zdan gotowego akapitu - kawalek to czesc
-                 zdania, wiec liczenie ich na kawalkach dawaloby bzdury. Starsze rozmowy
-                 maja uwagi przy zdaniach i tak je czytamy. #}
-              {% set uwagi = w.answer_json.styl or (w.answer_json.sentences | selectattr("styl") | list) %}
               {% set niepewne = w.answer_json.sentences | rejectattr("verified") | list %}
               {% if niepewne %}
-              <p><small class="uwaga-stylu">Nie znalazłem w źródle: {{ niepewne | map(attribute="text") | join(" · ") }}</small></p>
+              <p><small class="brak-w-zrodle">Nie znalazłem w źródle: {{ niepewne | map(attribute="text") | join(" · ") }}</small></p>
               {% endif %}
-              {% if uwagi and not w.edited_text %}
-              <details class="uwagi-jezyka">
-                <summary>Uwagi do języka ({{ uwagi | length }})</summary>
-                <ul>
-                  {% for z in uwagi %}<li>„{{ z.text }}" — {{ z.styl | join(", ") }}</li>{% endfor %}
-                </ul>
-              </details>
-              {% endif %}
-
               <p class="narzedzia-odpowiedzi">
                 <button type="button" class="ikona" data-kopiuj="odp-{{ w.id }}" title="Kopiuj odpowiedź">⧉ kopiuj</button>
                 <button type="button" class="ikona" data-edytuj="edycja-{{ w.id }}" title="Popraw tekst">✎ popraw</button>
