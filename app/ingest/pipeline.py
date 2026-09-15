@@ -89,6 +89,15 @@ def process_source(source_id: int) -> None:
         data = download_bytes(source.object_key)
         pages_text = _extract_pages(source.kind, data)
 
+        # Przetwarzanie tego samego zrodla drugi raz musi zaczac od czystego
+        # stanu. Bez tego akapity z poprzedniego podzialu zostawaly w bazie
+        # obok nowych i wychodzily w wynikach jako drugi egzemplarz ksiazki.
+        stare_strony = [p.id for p in db.query(Page).filter_by(source_id=source.id).all()]
+        if stare_strony:
+            db.query(Chunk).filter(Chunk.page_id.in_(stare_strony)).delete(synchronize_session=False)
+            db.query(Page).filter(Page.id.in_(stare_strony)).delete(synchronize_session=False)
+            db.flush()
+
         for number, text in enumerate(pages_text, start=1):
             page = Page(source_id=source.id, number=number)
             db.add(page)

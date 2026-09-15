@@ -12,9 +12,11 @@ from sqlalchemy import case, literal
 from qdrant_client import QdrantClient
 from qdrant_client.models import (
     Distance,
+    FilterSelector,
     FieldCondition,
     Filter,
     MatchAny,
+    MatchValue,
     PayloadSchemaType,
     PointStruct,
     VectorParams,
@@ -56,6 +58,17 @@ def embed(texts: list[str]) -> list[list[float]]:
 def index_source(source_id: int) -> int:
     """Liczy wektory akapitow zrodla i wysyla do Qdranta. Zwraca liczbe akapitow."""
     ensure_collection()
+    # Punkty po poprzednim przetworzeniu tego zrodla musza zniknac. Sam upsert
+    # ich nie ruszy, bo nowe akapity dostaja nowe numery - stare zostawaly
+    # w indeksie i wychodzily w wynikach jako akapity, ktorych nie ma juz
+    # w bazie. Zajmowaly miejsce w kazdym wyszukiwaniu i cicho przepadaly
+    # dopiero przy skladaniu odpowiedzi.
+    _qdrant.delete(
+        collection_name=settings.qdrant_collection,
+        points_selector=FilterSelector(
+            filter=Filter(must=[FieldCondition(key="source_id", match=MatchValue(value=source_id))])
+        ),
+    )
     db = SessionLocal()
     try:
         chunks = db.query(Chunk).filter_by(source_id=source_id).order_by(Chunk.id).all()
@@ -162,6 +175,50 @@ def _szukaj_doslownie(slowa: list[str], source_ids: list[int] | None, limit: int
         db.close()
 
 
+# Ile akapitow gwarantujemy ksiazce, ktora w ogole cokolwiek trafila. Bez
+# tego ksiazka slabsza w rankingu nie dostaje glosu: przy dwoch ksiazkach
+# wyszukiwanie zwracalo dziewiec akapitow z jednej i jeden z drugiej, wiec
+# porownanie miedzy ksiazkami nie mialo z czego powstac.
+MIN_NA_ZRODLO = 3
+
+
+def _zrodla_akapitow(chunk_ids: list[int]) -> dict[int, int]:
+    """Ktory akapit z ktorej ksiazki. Przy okazji odsiewa akapity, ktorych juz
+    nie ma w bazie - w indeksie moga zostac po starym przetworzeniu."""
+    if not chunk_ids:
+        return {}
+    db = SessionLocal()
+    try:
+        return {c.id: c.source_id for c in db.query(Chunk).filter(Chunk.id.in_(chunk_ids)).all()}
+    finally:
+        db.close()
+
+
+def _sprawiedliwie(ranking: list[int], zrodla: dict[int, int], limit: int) -> list[int]:
+    """Dokłada akapity ksiazkom, ktore przegraly ranking, kosztem tych z nadmiarem.
+
+    Odpowiedz ma byc krotka, wiec liczba akapitow zostaje bez zmian - zmienia
+    sie tylko ich rozdzial. Ksiazka, ktora nie trafila nic, nie dostaje nic."""
+    ranking = [c for c in ranking if c in zrodla]
+    wybrane = ranking[:limit]
+    if len({zrodla[c] for c in ranking}) < 2:
+        return wybrane
+
+    for source_id in dict.fromkeys(zrodla[c] for c in ranking):
+        brakuje = MIN_NA_ZRODLO - sum(1 for c in wybrane if zrodla[c] == source_id)
+        for kandydat in [c for c in ranking if zrodla[c] == source_id and c not in wybrane][:max(brakuje, 0)]:
+            nadmiarowe = [
+                c for c in reversed(wybrane)
+                if sum(1 for x in wybrane if zrodla[x] == zrodla[c]) > MIN_NA_ZRODLO
+            ]
+            if not nadmiarowe:
+                break
+            wybrane[wybrane.index(nadmiarowe[0])] = kandydat
+
+    # Kolejnosc z rankingu - najtrafniejsze najpierw, tak jak oczekuje reszta kodu.
+    return [c for c in ranking if c in set(wybrane)]
+
+
 def _polacz(wektorowe: list[int], doslowne: list[int], limit: int) -> list[int]:
     """Laczy obie listy metoda odwrotnosci pozycji.
 
@@ -197,12 +254,17 @@ def search(query: str, source_ids: list[int] | None = None, limit: int = 12) -> 
         query_filter = Filter(
             must=[FieldCondition(key="source_id", match=MatchAny(any=list(source_ids)))]
         )
+    # Obie listy bierzemy szersze niz limit: inaczej ksiazka, ktora przegrala
+    # ranking, nie ma czym dolozyc, bo jej akapity nie zmiescily sie juz
+    # w wynikach wyszukiwania.
+    szeroko = limit * 3
     hits = _qdrant.search(
         collection_name=settings.qdrant_collection,
         query_vector=embed([query])[0],
-        limit=limit,
+        limit=szeroko,
         query_filter=query_filter,
     )
     wektorowe = [hit.payload["chunk_id"] for hit in hits]
-    doslowne = _szukaj_doslownie(_slowa_kluczowe(query), source_ids, limit)
-    return _polacz(wektorowe, doslowne, limit)
+    doslowne = _szukaj_doslownie(_slowa_kluczowe(query), source_ids, szeroko)
+    ranking = _polacz(wektorowe, doslowne, szeroko)
+    return _sprawiedliwie(ranking, _zrodla_akapitow(ranking), limit)
