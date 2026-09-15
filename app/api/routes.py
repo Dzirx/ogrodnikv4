@@ -152,6 +152,7 @@ def czesci_odpowiedzi(odpowiedz: dict) -> list[dict]:
                 "text": tekst,
                 "verified": czesc.get("verified", False),
                 "zrodla": _zrodla_czesci(czesc),
+                "ustalenie": czesc.get("ustalenie"),
             }
         )
     return wynik

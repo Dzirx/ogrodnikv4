@@ -96,6 +96,7 @@
     cursor: pointer; vertical-align: super; line-height: 1.4;
   }
   .znacznik:hover { background: var(--akcent); color: #fff; }
+  .ustalenie { font-size: 0.7rem; vertical-align: super; margin-left: 0.15rem; color: var(--przygaszony); border-bottom: 1px dotted var(--przygaszony); cursor: help; }
   .akapit-zrodla { background: var(--tlo); padding: 0.8rem; border-radius: 6px; font-size: 0.95rem; }
   .akapit-zrodla mark { background: #ffe680; padding: 0 0.1rem; }
   .podglad-strona { width: 100%; border: 1px solid var(--ramka); border-radius: 4px; }
@@ -193,6 +194,10 @@
                   {%- for zrodlo in czesc.zrodla -%}
                     <a class="znacznik" href="?podglad={{ zrodlo.chunk_id }}&w={{ w.id }}&z={{ nr }}" title="{{ zrodlo.source_title }}, strona {{ zrodlo.page }}">{{ zrodlo.marker }}</a>
                   {%- endfor -%}
+                  {#- Wartosc rozstrzygnieta przez czlowieka nie dostaje odnosnika do
+                      ksiazki, bo ksiazka mowi co innego. Zamiast numeru stoi przy niej
+                      slowo, ktore mowi wprost, skad sie wziela. -#}
+                  {%- if czesc.ustalenie %}<span class="ustalenie" title="{{ czesc.ustalenie }} — rozstrzygnięte w zakładce Do rozstrzygnięcia">ustalenie</span>{% endif -%}
                 {%- endfor -%}
               </p>
               {% endif %}

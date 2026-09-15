@@ -21,6 +21,8 @@ import re
 
 from openai import OpenAI
 
+from app.answer.cytaty import normalize, quote_is_in_chunk
+from app.answer.konflikty import ustalenia_dla, znajdz_konflikty  # noqa: F401  (czytane też z tego modułu)
 from app.config import settings
 from app.db.base import SessionLocal
 from app.db.models import Chunk, Page, Source
@@ -133,6 +135,16 @@ Przykład dla faktów 0: "podlewać 2-3 razy w tygodniu, w czasie kwitnienia",
 
 Zwróć uwagę: trzy fakty dały jedno zdanie, nie trzy.
 
+USTALENIA ANIELSKICH OGRODÓW
+Czasem dostajesz listę ustaleń. To rozstrzygnięcia człowieka w sprawach, w których książki
+podawały różne wartości. Ustalenie jest ważniejsze od faktu: jeśli fakt mówi co innego,
+piszesz wartość z ustalenia.
+
+Wartość z ustalenia umieść w OSOBNYM kawałku i podaj jego numer w polu "ustalenia".
+Wtedy nie stanie przy niej odnośnik do książki — bo książka mówi co innego, a odnośnik
+do niej byłby nieprawdą. Reszta zdania zostaje w swoich kawałkach, ze swoimi numerami
+faktów. Gdy nie korzystasz z żadnego ustalenia, zostaw "ustalenia" puste.
+
 GRANICA SWOBODY — to najważniejsze
 Wolno Ci zmienić SPOSÓB powiedzenia. Nie wolno dodać ani jednej informacji, której nie ma
 w faktach.
@@ -181,8 +193,9 @@ _SCHEMA_ODPOWIEDZ = {
                 "properties": {
                     "tekst": {"type": "string"},
                     "fakty": {"type": "array", "items": {"type": "integer"}},
+                    "ustalenia": {"type": "array", "items": {"type": "integer"}},
                 },
-                "required": ["tekst", "fakty"],
+                "required": ["tekst", "fakty", "ustalenia"],
                 "additionalProperties": False,
             },
         }
@@ -190,30 +203,6 @@ _SCHEMA_ODPOWIEDZ = {
     "required": ["czesci"],
     "additionalProperties": False,
 }
-
-def normalize(text: str) -> str:
-    """Do porownania cytatu z akapitem.
-
-    Roznice w bialych znakach i rodzaju myslnika nie sa falszerstwem - PDF
-    lamie wiersze gdzie popadnie, a model przepisuje z pamieci wzrokowej.
-    W pierwszej wersji cytat odrzucany za jeden myslnik byl najczestsza
-    przyczyna falszywych alarmow."""
-    text = text.replace("–", "-").replace("—", "-").replace("‑", "-")
-    text = text.replace(" ", " ").replace("„", '"').replace("”", '"')
-    return re.sub(r"\s+", " ", text).strip().lower()
-
-
-# Ponizej tej dlugosci "cytat" niczego nie potwierdza - pojedyncze slowo
-# znajdzie sie w niemal kazdym akapicie.
-MIN_QUOTE_CHARS = 12
-
-
-def quote_is_in_chunk(quote: str, chunk_text: str) -> bool:
-    normalized = normalize(quote)
-    if len(normalized) < MIN_QUOTE_CHARS:
-        return False
-    return normalized in normalize(chunk_text)
-
 
 # Ile ostatnich wiadomosci wystarczy, zeby zrozumiec pytanie doprecyzowujace.
 OKNO_HISTORII = 4
@@ -298,7 +287,11 @@ def answer_question(
         if not fakty:
             return _no_data()
 
-        raw = _napisz_z_faktow(do_wyszukania, fakty)
+        # Roznice miedzy ksiazkami wychodza na jaw wlasnie tutaj: fakty sa juz
+        # zebrane dla jednego pytania, wiec z definicji dotycza tej samej rzeczy.
+        znajdz_konflikty(db, do_wyszukania, fakty, by_id)
+
+        raw = _napisz_z_faktow(do_wyszukania, fakty, ustalenia_dla(db, chunk_ids))
         return _verify(raw, by_id, pages, sources)
     finally:
         db.close()
@@ -367,7 +360,7 @@ def _zbierz_fakty(question: str, context: list[dict]) -> list[dict]:
     return json.loads(odpowiedz.choices[0].message.content).get("fakty", [])
 
 
-def _napisz_z_faktow(question: str, fakty: list[dict]) -> dict:
+def _napisz_z_faktow(question: str, fakty: list[dict], ustalenia: list[dict] | None = None) -> dict:
     """Krok drugi: odpowiedz ulozona z faktow.
 
     Model dostaje tylko tresc i warunek - bez cytatow i bez zdan zrodlowych.
@@ -383,7 +376,10 @@ def _napisz_z_faktow(question: str, fakty: list[dict]) -> dict:
             {"role": "system", "content": PISANIE_PROMPT},
             {
                 "role": "user",
-                "content": json.dumps({"pytanie": question, "fakty": do_napisania}, ensure_ascii=False),
+                "content": json.dumps(
+                    {"pytanie": question, "fakty": do_napisania, "ustalenia": ustalenia or []},
+                    ensure_ascii=False,
+                ),
             },
         ],
         response_format={
@@ -408,7 +404,16 @@ def _napisz_z_faktow(question: str, fakty: list[dict]) -> dict:
             if any(z["chunk_id"] == fakt.get("chunk_id") for z in zrodla):
                 continue
             zrodla.append({"chunk_id": fakt.get("chunk_id"), "quote": fakt.get("quote", "")})
-        czesci.append({"text": czesc.get("tekst", ""), "zrodla": zrodla})
+        # Kawalek z ustaleniem nie dostaje odnosnika do ksiazki: ksiazka mowi
+        # co innego, wiec odnosnik do niej bylby nieprawda.
+        uzyte = [
+            (ustalenia or [])[n]["temat"]
+            for n in czesc.get("ustalenia", [])
+            if isinstance(n, int) and 0 <= n < len(ustalenia or [])
+        ]
+        czesci.append(
+            {"text": czesc.get("tekst", ""), "zrodla": [] if uzyte else zrodla, "ustalenie": uzyte[0] if uzyte else None}
+        )
     return {"czesci": czesci}
 
 
@@ -465,14 +470,17 @@ def _verify(raw: dict, by_id: dict, pages: dict, sources: dict) -> dict:
             )
 
         tekst = item.get("text", "")
-        spoiwo = not zrodla and jest_spoiwem(tekst)
+        ustalenie = item.get("ustalenie")
+        spoiwo = not zrodla and not ustalenie and jest_spoiwem(tekst)
         czesci.append(
             {
                 "text": tekst,
                 # Samo spoiwo niczego nie twierdzi, wiec nie ma w nim czego
                 # sprawdzac. Kawalek bez przypisu, ktory JEDNAK cos mowi,
                 # traktujemy tak samo jak zmyslony cytat.
-                "verified": spoiwo or (bool(zrodla) and all(z["verified"] for z in zrodla)),
+                # Ustalenie rozstrzygnal czlowiek - to mocniejsze niz cytat.
+                "verified": bool(ustalenie) or spoiwo or (bool(zrodla) and all(z["verified"] for z in zrodla)),
+                "ustalenie": ustalenie,
                 "spoiwo": spoiwo,
                 "sources": zrodla,
             }
