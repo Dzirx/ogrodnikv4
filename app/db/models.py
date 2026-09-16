@@ -12,7 +12,7 @@ fragmentem akapitu - dlatego nie da sie go zgubic ani zdublowac.
 
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -71,6 +71,10 @@ class Page(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     source_id: Mapped[int] = mapped_column(ForeignKey("sources.id"), index=True)
     number: Mapped[int] = mapped_column(Integer)
+    # Tekst tej strony odczytany z obrazu, nie z warstwy tekstowej. Cytat stad
+    # jest mniej pewny - na pomiarach 94-98% slow sie zgadza, a polskie znaki
+    # potrafia sie przekrecic ("lodyga" na "todyga").
+    z_obrazu: Mapped[bool] = mapped_column(Boolean, default=False)
 
     source: Mapped["Source"] = relationship(back_populates="pages")
 

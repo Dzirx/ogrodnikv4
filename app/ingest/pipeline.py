@@ -13,7 +13,10 @@ from sqlalchemy.orm.attributes import flag_modified
 
 from app.answer.cytaty import bez_odstepow
 from app.db.models import Chunk, Label, Message, Page, Source, SourceLabel
+from concurrent.futures import ThreadPoolExecutor
+
 from app.ingest.chunks import split_into_paragraphs
+from app.ingest.ocr import MIN_PEWNOSC, RAZEM_STRON, gdzie_jest_tekst, ma_tresc, odczytaj_obraz
 from app.ingest.storage import download_bytes, upload_bytes
 from app.search.index import index_source
 
@@ -101,8 +104,8 @@ def process_source(source_id: int) -> None:
             db.query(Page).filter(Page.id.in_(stare_strony)).delete(synchronize_session=False)
             db.flush()
 
-        for number, text in enumerate(pages_text, start=1):
-            page = Page(source_id=source.id, number=number)
+        for number, (text, z_obrazu) in enumerate(pages_text, start=1):
+            page = Page(source_id=source.id, number=number, z_obrazu=z_obrazu)
             db.add(page)
             db.flush()
             for seq, paragraph in enumerate(split_into_paragraphs(text)):
@@ -181,21 +184,55 @@ def przepnij_odnosniki(db, source_id: int) -> int:
     return przepiete
 
 
-def _extract_pages(kind: str, data: bytes) -> list[str]:
-    """Tekst per strona. Wklejony tekst to jedna strona.
+def _extract_pages(kind: str, data: bytes) -> list[tuple[str, bool]]:
+    """Tekst kazdej strony wraz z informacja, czy trzeba go bylo odczytac z obrazu.
 
-    Wylacznie warstwa tekstowa, bez OCR - skany nie wejda i trzeba to
-    powiedziec klientowi wprost, zamiast udawac, ze dziala."""
-    if kind == "pdf":
-        # TEXT_INHIBIT_SPACES jest tu konieczne, nie kosmetyczne. Bez tej flagi
-        # PyMuPDF wstawia spacje wszedzie tam, gdzie w PDF-ie jest wiekszy
-        # odstep miedzy literami - w ksiazce Sulka dawalo to "Poleca m podlewa
-        # c pomido ry system em lin ii kroplujacyc h" w co trzecim akapicie.
-        # Psulo to wszystko naraz: wyszukiwanie po slowach nie trafialo w
-        # "kroplujacych", wektor liczyl sie z siekanego tekstu, a cytat modelu
-        # (przeczytany poprawnie, bo litery sa na miejscu) nie zgadzal sie
-        # z akapitem i odpowiedz dostawala "Nie znalazlem w zrodle".
-        flagi = fitz.TEXTFLAGS_TEXT | fitz.TEXT_INHIBIT_SPACES | fitz.TEXT_DEHYPHENATE
-        with fitz.open(stream=data, filetype="pdf") as document:
-            return [page.get_text("text", flags=flagi) for page in document]
-    return [data.decode("utf-8")]
+    Nie pytamy "czy to jest skan", tylko "gdzie na tej stronie jest tresc".
+    Dzieki temu ta sama reguła obsluguje ksiazke tekstowa, skan i ksiazke
+    mieszana - a klient niczego nie musi nam mowic przy wgrywaniu."""
+    if kind != "pdf":
+        return [(data.decode("utf-8"), False)]
+
+    # TEXT_INHIBIT_SPACES jest tu konieczne, nie kosmetyczne. Bez tej flagi
+    # PyMuPDF wstawia spacje wszedzie tam, gdzie w PDF-ie jest wiekszy
+    # odstep miedzy literami - w ksiazce Sulka dawalo to "Poleca m podlewa
+    # c pomido ry system em lin ii kroplujacyc h" w co trzecim akapicie.
+    # Psulo to wszystko naraz: wyszukiwanie po slowach nie trafialo w
+    # "kroplujacych", wektor liczyl sie z siekanego tekstu, a cytat modelu
+    # (przeczytany poprawnie, bo litery sa na miejscu) nie zgadzal sie
+    # z akapitem i odpowiedz dostawala "Nie znalazlem w zrodle".
+    flagi = fitz.TEXTFLAGS_TEXT | fitz.TEXT_INHIBIT_SPACES | fitz.TEXT_DEHYPHENATE
+
+    strony: list[tuple[str, bool]] = []
+    do_odczytu: list[int] = []
+
+    with fitz.open(stream=data, filetype="pdf") as document:
+        for numer, strona in enumerate(document):
+            warstwa = strona.get_text("text", flags=flagi)
+            pokrycie_tekstu, pokrycie_obrazow = gdzie_jest_tekst(strona)
+            strony.append((warstwa, False))
+
+            # Tekst pokrywa strone - nie ma czego szukac w obrazach.
+            if pokrycie_tekstu >= 0.05:
+                continue
+            # Tekstu nie ma albo jest go sladowo. Jesli jest obraz, tresc
+            # siedzi wlasnie w nim.
+            if pokrycie_obrazow >= 0.2:
+                do_odczytu.append(numer)
+
+        if do_odczytu:
+            # Rownolegle, bo Tesseract idzie osobnym procesem i czekamy tylko
+            # na wejscie-wyjscie. Osiemnascie sekund na strone razy trzysta
+            # stron to poltorej godziny; w czterech watkach niecala godzina.
+            with ThreadPoolExecutor(max_workers=RAZEM_STRON) as pula:
+                odczyty = list(pula.map(lambda n: odczytaj_obraz(document[n]), do_odczytu))
+
+            for numer, (odczyt, pewnosc) in zip(do_odczytu, odczyty):
+                if pewnosc < MIN_PEWNOSC or not ma_tresc(odczyt):
+                    continue  # fotografia - odczyt to szum, zostaje co bylo
+                # Naglowek rozdzialu z warstwy tekstowej zostaje - jest
+                # dokladny co do znaku, a OCR moze go przekrecic.
+                warstwa = strony[numer][0]
+                strony[numer] = (f"{warstwa}\n{odczyt}".strip(), True)
+
+    return strony

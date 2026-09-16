@@ -135,6 +135,7 @@
     cursor: pointer; vertical-align: super; line-height: 1.4;
   }
   .znacznik:hover { background: var(--akcent); color: #fff; }
+  .z-obrazu { color: var(--uwaga); }
   .zrodla-odpowiedzi { font-size: 0.85rem; color: var(--przygaszony); margin: 0.4rem 0 0; }
   .zrodla-odpowiedzi a { color: var(--przygaszony); }
   .ustalenie { font-size: 0.7rem; vertical-align: super; margin-left: 0.15rem; color: var(--przygaszony); border-bottom: 1px dotted var(--przygaszony); cursor: help; }
@@ -236,7 +237,7 @@
                   {%- if czesc.nowy_akapit %}</p><p>{% endif -%}
                   <span class="zdanie{% if not czesc.verified %} niepotwierdzone{% endif %}">{{ czesc.text }}</span>
                   {%- for zrodlo in czesc.znaczniki -%}
-                    <a class="znacznik" href="?podglad={{ zrodlo.chunk_id }}&w={{ w.id }}&z={{ nr }}" title="{{ zrodlo.source_title }}, strona {{ zrodlo.page }}">{{ zrodlo.marker }}</a>
+                    <a class="znacznik" href="?podglad={{ zrodlo.chunk_id }}&w={{ w.id }}&z={{ nr }}" title="{{ zrodlo.source_title }}, strona {{ zrodlo.page }}{% if zrodlo.z_obrazu %} — odczytane z obrazu{% endif %}">{{ zrodlo.marker }}{% if zrodlo.z_obrazu %}<span class="z-obrazu" title="strona odczytana z obrazu, cytat może być niedokładny">*</span>{% endif %}</a>
                   {%- endfor -%}
                   {#- Wartosc rozstrzygnieta przez czlowieka nie dostaje odnosnika do
                       ksiazki, bo ksiazka mowi co innego. Zamiast numeru stoi przy niej

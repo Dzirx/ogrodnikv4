@@ -1018,6 +1018,10 @@ def _verify(raw: dict, by_id: dict, pages: dict, sources: dict) -> dict:
                     "source_title": source.title,
                     "source_kind": source.kind,
                     "page": page.number,
+                    # Cytat z odczytu obrazu jest mniej pewny niz z warstwy
+                    # tekstowej: na pomiarach 94-98% slow sie zgadza, a polskie
+                    # znaki potrafia sie przekrecic ("lodyga" na "todyga").
+                    "z_obrazu": bool(getattr(page, "z_obrazu", False)),
                     "quote": wskazanie.get("quote", ""),
                     "verified": quote_is_in_chunk(wskazanie.get("quote", ""), chunk.text),
                     "marker": used_chunks.index(chunk.id) + 1,
@@ -1056,6 +1060,7 @@ def _verify(raw: dict, by_id: dict, pages: dict, sources: dict) -> dict:
                 "source_title": sources[chunk.source_id].title,
                 "source_kind": sources[chunk.source_id].kind,
                 "page": pages[chunk.page_id].number,
+                "z_obrazu": bool(getattr(pages[chunk.page_id], "z_obrazu", False)),
                 "text": chunk.text,
             }
         )

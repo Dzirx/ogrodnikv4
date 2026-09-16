@@ -77,6 +77,9 @@
     <td>{% for e in z.labels %}<span class="etykieta">{{ e.name }}</span>{% else %}<span class="podpowiedz">—</span>{% endfor %}</td>
     <td>
       {% if z.status == "ready" %}{{ liczba_akapitow.get(z.id, 0) }} akapitów
+      {%- set s = strony.get(z.id) %}
+      {%- if s %}<br><small class="podpowiedz">{{ s.tekst + s.obraz }} stron:
+        {{ s.tekst }} z tekstu{% if s.obraz %}, {{ s.obraz }} odczytanych z obrazu{% endif %}</small>{% endif %}
       {% elif z.status == "error" %}<span style="color: var(--uwaga)">błąd: {{ z.error_text }}</span>
       {% else %}przetwarzanie…{% endif %}
     </td>

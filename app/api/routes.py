@@ -537,6 +537,17 @@ def zrodla(
         db.query(Chunk.source_id, func.count(Chunk.id)).group_by(Chunk.source_id).all()
     )
 
+    # Skad wzial sie tekst kazdego zrodla. Bez tego ksiazka wchodzila po cichu
+    # i dopiero przy trzecim cytacie bylo widac, ze polowa stron przepadla.
+    strony: dict[int, dict[str, int]] = {}
+    for source_id, z_obrazu, liczba in (
+        db.query(Page.source_id, Page.z_obrazu, func.count(Page.id))
+        .group_by(Page.source_id, Page.z_obrazu)
+        .all()
+    ):
+        wpis = strony.setdefault(source_id, {"tekst": 0, "obraz": 0})
+        wpis["obraz" if z_obrazu else "tekst"] += liczba
+
     etykiety = (
         db.query(Label.code, Label.name, func.count(SourceLabel.source_id))
         .join(SourceLabel, SourceLabel.label_id == Label.id)
@@ -552,6 +563,7 @@ def zrodla(
             "strona": "zrodla",
             "zrodla": wybrane,
             "liczba_akapitow": liczniki,
+            "strony": strony,
             "wszystkich": db.query(Source).count(),
             "pasujacych": pasujace,
             "starsze": max(pasujace - ile, 0),
