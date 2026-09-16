@@ -16,7 +16,14 @@ from app.db.models import Chunk, Label, Message, Page, Source, SourceLabel
 from concurrent.futures import ThreadPoolExecutor
 
 from app.ingest.chunks import split_into_paragraphs
-from app.ingest.ocr import MIN_PEWNOSC, RAZEM_STRON, gdzie_jest_tekst, ma_tresc, odczytaj_obraz
+from app.ingest.ocr import (
+    MIN_PEWNOSC,
+    RAZEM_STRON,
+    gdzie_jest_tekst,
+    ma_tresc,
+    odczytaj_png,
+    zrzut_strony,
+)
 from app.ingest.storage import download_bytes, upload_bytes
 from app.search.index import index_source
 
@@ -221,11 +228,13 @@ def _extract_pages(kind: str, data: bytes) -> list[tuple[str, bool]]:
                 do_odczytu.append(numer)
 
         if do_odczytu:
-            # Rownolegle, bo Tesseract idzie osobnym procesem i czekamy tylko
-            # na wejscie-wyjscie. Osiemnascie sekund na strone razy trzysta
-            # stron to poltorej godziny; w czterech watkach niecala godzina.
+            # Render po kolei, w watku glownym: PyMuPDF nie jest bezpieczny
+            # wielowatkowo i siegniecie po dokument z czterech watkow naraz
+            # zawieszalo przetwarzanie. Rownolegle idzie tylko Tesseract -
+            # osobny proces, wiec czekamy wylacznie na wejscie-wyjscie.
+            zrzuty = [zrzut_strony(document[n]) for n in do_odczytu]
             with ThreadPoolExecutor(max_workers=RAZEM_STRON) as pula:
-                odczyty = list(pula.map(lambda n: odczytaj_obraz(document[n]), do_odczytu))
+                odczyty = list(pula.map(odczytaj_png, zrzuty))
 
             for numer, (odczyt, pewnosc) in zip(do_odczytu, odczyty):
                 if pewnosc < MIN_PEWNOSC or not ma_tresc(odczyt):

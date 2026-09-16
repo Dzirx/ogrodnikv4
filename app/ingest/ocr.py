@@ -16,30 +16,56 @@ import subprocess
 
 import fitz
 
-# Ponizej tej pewnosci Tesseract czyta szum, nie tekst. Zmierzone na
-# fotografiach z ksiazek klienta: zdjecie krzewow w tunelu dalo 31%, zdjecie
-# peknietego owocu 45%. Prawdziwy tekst wychodzi grubo powyzej.
+# Ponizej tej pewnosci strona jest obrazem, nie tekstem. Zmierzone na
+# ksiazkach klienta: fotografia krzewow 31%, zdjecie owocu 45%, strona
+# tytulowa 90,6%, stopka z adresem 92,6%.
+#
+# Bylo 65 i okazalo sie za nisko: okladka PODR przeszla z wynikiem 70,2%,
+# a odczyt to w wiekszosci szum obok poprawnie odczytanej nazwy instytucji.
 #
 # To jest stala JAKOSCI ODCZYTU, nie stala ksiazki - dlatego przeniesie sie na
 # nastepne pliki. Progu "ile znakow ma miec strona" celowo nie ma: ksiazka
 # z gestym skladem ma ich dwa tysiace, album ze zdjeciami dwiescie, a jedna
 # liczba w kodzie bylaby zla dla ktorejs z nich.
-MIN_PEWNOSC = 65
+MIN_PEWNOSC = 80
+
+# Ponizej tej pewnosci pojedyncze slowo jest smieciem, nawet gdy cala strona
+# czyta sie dobrze. Na okladce nazwa instytucji wyszla poprawnie, a szum wokol
+# niej - nie; srednia po calej stronie tego nie rozdziela.
+MIN_PEWNOSC_SLOWA = 60
 
 # Rozdzielczosc renderu do OCR. Ponizej 300 dpi Tesseract gubi ogonki.
 DPI = 300
+
+# Sufit na dluzszy bok obrazu. A4 w 300 dpi ma 3508 pikseli, wiec zwykla strona
+# go nie dotyka. Chroni przed PDF-em o nietypowych wymiarach: strona zapisana
+# w punktach rownych pikselom skanu dala obraz 6900x9700 i Tesseract czytal ja
+# 215 sekund zamiast osiemnastu.
+MAX_PIKSELI = 3600
 
 # Ile stron czytamy naraz. Tesseract idzie osobnym procesem, wiec czekamy
 # tylko na wejscie-wyjscie i watki wystarcza.
 RAZEM_STRON = 4
 
 
-def odczytaj_obraz(strona: fitz.Page, obszar: fitz.Rect | None = None) -> tuple[str, float]:
-    """Tekst odczytany z obrazu strony i srednia pewnosc odczytu (0-100)."""
-    pixmapa = strona.get_pixmap(dpi=DPI, clip=obszar)
+def zrzut_strony(strona: fitz.Page, obszar: fitz.Rect | None = None) -> bytes:
+    """Strona jako obraz PNG. WYLACZNIE z watku glownego.
+
+    PyMuPDF nie jest bezpieczny wielowatkowo - siegniecie po ten sam dokument
+    z czterech watkow naraz zawieszalo przetwarzanie na tyle, ze cztery strony
+    nie skonczyly sie w dziewiec minut. Renderujemy wiec po kolei (to jest
+    szybkie), a rownolegle idzie tylko Tesseract, ktory jest osobnym procesem."""
+    prostokat = obszar or strona.rect
+    dluzszy_bok = max(prostokat.width, prostokat.height) / 72  # w calach
+    dpi = min(DPI, int(MAX_PIKSELI / dluzszy_bok)) if dluzszy_bok else DPI
+    return strona.get_pixmap(dpi=max(dpi, 72), clip=obszar).tobytes("png")
+
+
+def odczytaj_png(png: bytes) -> tuple[str, float]:
+    """Tekst odczytany z obrazu i srednia pewnosc odczytu (0-100)."""
     wynik = subprocess.run(
         ["tesseract", "stdin", "stdout", "-l", "pol", "--psm", "6", "tsv"],
-        input=pixmapa.tobytes("png"),
+        input=png,
         capture_output=True,
     )
     if wynik.returncode != 0:
@@ -52,14 +78,22 @@ def odczytaj_obraz(strona: fitz.Page, obszar: fitz.Rect | None = None) -> tuple[
         if len(pola) < 12 or not pola[11].strip():
             continue
         try:
-            pewnosci.append(float(pola[10]))
+            pewnosc = float(pola[10])
         except ValueError:
             continue
-        slowa.append(pola[11].strip())
+        pewnosci.append(pewnosc)
+        # Smiecie odsiewamy slowo po slowie, nie srednia po stronie.
+        if pewnosc >= MIN_PEWNOSC_SLOWA:
+            slowa.append(pola[11].strip())
 
     if not pewnosci:
         return "", 0.0
     return " ".join(slowa), sum(pewnosci) / len(pewnosci)
+
+
+def odczytaj_obraz(strona: fitz.Page, obszar: fitz.Rect | None = None) -> tuple[str, float]:
+    """Wygoda dla pojedynczej strony: zrzut i odczyt za jednym zamachem."""
+    return odczytaj_png(zrzut_strony(strona, obszar))
 
 
 def _pokrycie(prostokaty: list[fitz.Rect], strona: fitz.Page) -> float:
