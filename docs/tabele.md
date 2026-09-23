@@ -14,18 +14,35 @@ oraz jedna w broszurze PODR. Książki ogrodnicze są prozą.
 
 ## Jak to robimy
 
-Jedno wywołanie modelu na stronę:
+Dwa wywołania modelu na stronę i kod, który niczego nie interpretuje.
 
-1. **Renderujemy stronę jako obraz.**
-2. **Wysyłamy modelowi obraz i tekst tej samej strony naraz.** Obraz mówi, co z czym
-   sąsiaduje; tekst mówi, jak się to pisze.
-3. **Model zwraca nagłówki kolumn i wiersze** — nazwy kolumn odczytuje z tabeli,
-   nie dostaje ich od nas. Komórka pusta, bo scalona z wierszem wyżej, wraca jako `null`.
-4. **Kod robi trzy rzeczy i nic więcej:** podstawia pod `null` wartość z wiersza wyżej,
-   sprawdza, czy każda wartość występuje w tekście strony, i składa zdanie
-   `nazwa kolumny: wartość; …`.
-5. **Zapis jak każdy inny akapit:** `Chunk(source_id, page_id, seq, text)`. Dalej
-   embedding, Qdrant, cytat ze stroną, konflikty — bez zmian.
+**Model 1 — czyta tabelę.** Dostaje stronę w dwóch postaciach: jako obraz i jako tekst
+z `page.get_text()`. Obraz mówi, co z czym sąsiaduje; tekst mówi, jak się to pisze.
+Zwraca nazwy kolumn (odczytane z tabeli, nie podane przez nas) i wiersze. Komórka pusta,
+bo scalona z wierszem wyżej, wraca jako `null`.
+
+**Model 2 — sprawdza i pisze.** Dostaje ten sam obraz i wynik modelu 1. Odpowiada, czy
+odczyt zgadza się z tabelą, a potem układa z każdego wiersza jedno zdanie po polsku.
+Zdanie pisze model, bo kod nie rozumie treści i skleiłby listę pól, której nikt nie
+przeczyta i która źle się wyszukuje.
+
+**Kod — pilnuje, nie tworzy.** Robi trzy rzeczy:
+
+1. podstawia pod `null` wartość z wiersza wyżej z tej samej kolumny,
+2. sprawdza, czy każda wartość z modelu 1 występuje w tekście strony — to wyłapuje
+   zmyślone nazwy,
+3. sprawdza, czy zdanie z modelu 2 zawiera dokładnie te liczby, co wiersz — ani jednej
+   mniej, ani jednej więcej.
+
+Trzecia kontrola jest najważniejsza, bo liczby w tych tabelach to dawki i karencje.
+Kod nie rozumie zdania, ale rozpozna, że „w dawce 25 l na ha" ma liczbę, której w wierszu
+nie było, a zgubiło `2,5–3`. Nie da się tego obejść gładkim stylem.
+
+Sprawdzanie zdania słowo po słowie nie działa — model odmienia wyrazy i dodaje spoiwo
+(„w fazie", „oznaczonej jako"), więc każde poprawne zdanie wyglądałoby na zmyślone.
+
+**Zapis jak każdy inny akapit:** `Chunk(source_id, page_id, seq, text)`. Dalej embedding,
+Qdrant, cytat ze stroną, konflikty — bez zmian.
 
 Kod nie wie, czy tabela ma kreski, ile ma kolumn ani czego dotyczy.
 
@@ -42,7 +59,8 @@ Razem: **6/6 wpisów i 36/36 pól** wobec wzorca spisanego ręcznie ze strony 8.
 
 ## Kiedy odrzucamy
 
-Jedna wartość niezgodna z tekstem strony unieważnia **cały wiersz**. Wpis nie wchodzi
+Wiersz wypada w całości, gdy zawiedzie którakolwiek z kontroli: wartość nie występuje
+w tekście strony, model 2 zgłosi niezgodność odczytu albo zdanie ma inne liczby niż wiersz. Wpis nie wchodzi
 do bazy częściowo, bo akapit bez nazwy preparatu, za to z dawką, wygląda na kompletny
 i jest groźniejszy niż jego brak.
 
@@ -64,10 +82,8 @@ dziewięć wierszy — do bazy nie weszło nic.
    Bez nich model wymyśla nazwy (`Nazwa środka`, `Termin stosowania`) i wszystko
    przepada na kontroli. Nagłówki trzeba zapamiętać przy pierwszej stronie tabeli
    i podawać kolejnym.
-2. **Druga ocena.** Na tabeli faz BBCH model raz odczytał układ poprawnie, raz rozbił
-   komórkę `00 000` na dwie kolumny. Drugi model, pytany nie „przeczytaj", tylko
-   „czy ten odczyt się zgadza", wykrył ten błąd. Do sprawdzenia, czy warto za to płacić
-   drugim wywołaniem na każdą stronę.
+2. **Koszt drugiego modelu.** Sprawdzenie i napisanie zdań dla sześciu wierszy kosztowało
+   1737 tokenów. Do zmierzenia na pełnej stronie, zanim powiemy, ile kosztuje książka.
 3. **Wzorce do mierzenia.** Mamy jeden, ręcznie spisany (`_tab/wzorzec_s8.json`, poza
    repozytorium). Bez drugiego nie da się powiedzieć, czy trzymamy 80%, o które prosił
    klient — jedna strona to za mało.
