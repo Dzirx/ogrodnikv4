@@ -72,15 +72,23 @@ Sam tekst też nie wystarcza — jest spaghetti i nie widać z niego kolumn.
 
 Razem: **6/6 wpisów i 36/36 pól** wobec wzorca spisanego ręcznie ze strony 8.
 
-## Kiedy odrzucamy
+## Co trafia do baz
 
-Wiersz wypada w całości, gdy zawiedzie którakolwiek z kontroli: wartość nie występuje
-w tekście strony, model 2 zgłosi niezgodność odczytu albo zdanie ma inne liczby niż wiersz. Wpis nie wchodzi
-do bazy częściowo, bo akapit bez nazwy preparatu, za to z dawką, wygląda na kompletny
-i jest groźniejszy niż jego brak.
+Blok z modelu 2 zapisujemy jako zwykły akapit i na tym nasza rola się kończy:
 
-Sprawdzone: przy zmyślonych nagłówkach na stronie 13 mechanizm odrzucił wszystkie
-dziewięć wierszy — do bazy nie weszło nic.
+```python
+db.add(Chunk(source_id=..., page_id=..., seq=..., text=blok))   # Postgres
+db.commit()
+index_source(source_id)                                          # Qdrant
+```
+
+`index_source` liczy embedding i wysyła go do Qdranta z payloadem, nie odróżniając
+akapitu z tabeli od akapitu prozy — bo to ten sam rekord. Dzięki temu bez żadnej zmiany
+działają: wyszukiwanie znaczeniowe, wyszukiwanie po słowach, cytat z numerem strony,
+podgląd strony i wykrywanie różnic między książkami.
+
+Nie ma wyłącznika odrzucającego stronę. Model 2 poprawia to, co widzi, i zapisuje;
+jeśli się pomyli, błąd wejdzie do bazy. To cena decyzji z rozdziału wyżej.
 
 ## Czego nie robimy
 
@@ -92,14 +100,27 @@ dziewięć wierszy — do bazy nie weszło nic.
 
 ## Co zostało do zrobienia
 
-1. **Nagłówki na stronach kontynuacji — jedyna rzecz, która na pewno wymaga naprawy.**
+1. **Nagłówki na stronach kontynuacji.** Decyzja z 23 września: na razie **nie naprawiamy**,
+   ruszamy z tym, co jest.
    Tabela dawek ciągnie się od strony 7 do 15, ale nazwy kolumn są tylko na pierwszej;
    dalej zostaje sam wiersz numeracji `1…9`. Oba modele wypełniają wtedy lukę zmyśleniem:
    `Nazwa handlowa`, `Kategoria`, `Okres prewencji` zamiast `Środek ochrony roślin`,
    `Karencja (dni)`, `Dodatkowe informacje`. Wartości są przy tym poprawne, ale stoją pod
    złą etykietą — `Kategoria: 30` zamiast `Karencja: 30` — więc pytanie o karencję nie
-   trafi w ten akapit. Nagłówki trzeba zapamiętać przy pierwszej stronie tabeli i podawać
-   kolejnym.
+   trafi w ten akapit.
+
+   Rozwiązanie nasuwa się samo — zapamiętać nagłówki przy pierwszej stronie tabeli
+   i podawać kolejnym — ale ma pułapkę, przez którą je odłożyliśmy. W programie
+   szklarniowym nagłówki są na stronach **7, 16 i 34**, czyli to trzy różne tabele.
+   Reguła „weź z ostatniej strony, która je miała" przypnie nazwy kolumn tabeli chorób
+   do tabeli szkodników — a wszystko będzie brzmiało wiarygodnie, bo etykiety pochodzą
+   z dokumentu. Gorsze niż zmyślenie.
+
+   Gdy do tego wrócimy: przekazywać nagłówki jako **podpowiedź, nie nakaz** („poprzednia
+   strona tej tabeli miała takie kolumny; jeśli na obrazie widzisz inną tabelę, zignoruj"),
+   albo dołożyć obraz pierwszej strony tabeli. W obu wypadkach rozstrzyga model, nie reguła
+   w kodzie. Czego nie umiemy zagwarantować: te tabele są składane jednym szablonem, więc
+   chwasty, choroby i szkodniki różnią się właściwie tylko nazwą pierwszej kolumny.
 2. **Koszt drugiego modelu.** Sprawdzenie i napisanie zdań dla sześciu wierszy kosztowało
    1737 tokenów. Do zmierzenia na pełnej stronie, zanim powiemy, ile kosztuje książka.
 3. **Wzorce do mierzenia.** Mamy jeden, ręcznie spisany (`_tab/wzorzec_s8.json`, poza
