@@ -53,4 +53,6 @@ która produkowała fałszywe konflikty i pytania bez odpowiedzi.
 - PDF-a odpowiedzi. Redaktor czyta ją na ekranie; jak zechce gdzieś wkleić,
   zaznaczy i skopiuje. PDF był elementem pierwszej wersji, gdzie materiał był
   dokumentem do wydruku z bibliografią — tutaj nie ma do czego.
-- OCR (skany), tabel i zdjęć — tak jak w pierwszej wersji.
+- Zdjęć i tabel będących obrazem — tak jak w pierwszej wersji.
+  (OCR stron, na których tekst siedzi w obrazie, doszedł później;
+  tabele z warstwy tekstowej opisuje `tabele.md`.)
