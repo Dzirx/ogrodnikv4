@@ -82,6 +82,12 @@
         {{ s.tekst }} z tekstu{% if s.obraz %}, {{ s.obraz }} odczytanych z obrazu{% endif %}</small>{% endif %}
       {% elif z.status == "error" %}<span style="color: var(--uwaga)">błąd: {{ z.error_text }}</span>
       {% else %}przetwarzanie…{% endif %}
+      {# Ponowne przetworzenie - najczęściej po błędzie (limit API, zły plik),
+         ale bezpieczne też przy "gotowe": process_source czyści stare akapity
+         przed ponownym podziałem, więc nie zostaje drugi egzemplarz książki. #}
+      <form method="post" action="/zrodla/{{ z.id }}/przetworz" style="display:inline">
+        <button type="submit" class="drugorzedny" style="padding:0.15rem 0.5rem; font-size:0.8rem;" title="Przetwórz źródło od nowa">↻ ponów</button>
+      </form>
     </td>
   </tr>
   {% endfor %}

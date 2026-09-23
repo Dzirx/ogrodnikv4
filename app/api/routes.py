@@ -605,6 +605,24 @@ async def dodaj_zrodlo(
     return RedirectResponse("/zrodla", status_code=303)
 
 
+@router.post("/zrodla/{source_id}/przetworz")
+def przetworz_ponownie(source_id: int, db: Session = Depends(get_db)):
+    """Ponowne przetworzenie źródła - np. po limicie API albo innym błędzie.
+
+    process_source czyści stare strony i akapity przed ponownym podziałem
+    (patrz app/ingest/pipeline.py), więc wywołanie tego na źródle, które już
+    ma dane w bazie, jest bezpieczne - nie zostanie drugi egzemplarz książki."""
+    source = db.get(Source, source_id)
+    if source is None:
+        raise HTTPException(404, "Nie ma takiego źródła")
+
+    source.status = "pending"
+    source.error_text = None
+    db.commit()
+    queue.enqueue(przetworz_zrodlo, source_id, job_timeout=3600)
+    return RedirectResponse("/zrodla", status_code=303)
+
+
 @router.get("/zrodla/{source_id}", response_class=HTMLResponse)
 def zrodlo(
     request: Request,
