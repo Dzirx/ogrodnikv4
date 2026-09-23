@@ -14,37 +14,45 @@ oraz jedna w broszurze PODR. Książki ogrodnicze są prozą.
 
 ## Jak to robimy
 
-Dwa wywołania modelu na stronę i kod, który niczego nie interpretuje.
+Dwa wywołania modelu na stronę. Kod nie sprawdza treści i niczego nie składa —
+renderuje stronę, wysyła, zapisuje wynik.
 
 **Model 1 — czyta tabelę.** Dostaje stronę w dwóch postaciach: jako obraz i jako tekst
 z `page.get_text()`. Obraz mówi, co z czym sąsiaduje; tekst mówi, jak się to pisze.
-Zwraca nazwy kolumn (odczytane z tabeli, nie podane przez nas) i wiersze. Komórka pusta,
-bo scalona z wierszem wyżej, wraca jako `null`.
+Zwraca nazwy kolumn — odczytane z tabeli, nie podane przez nas — i wiersze.
 
-**Model 2 — sprawdza i pisze.** Dostaje ten sam obraz i wynik modelu 1. Odpowiada, czy
-odczyt zgadza się z tabelą, a potem układa z każdego wiersza jedno zdanie po polsku.
-Zdanie pisze model, bo kod nie rozumie treści i skleiłby listę pól, której nikt nie
-przeczyta i która źle się wyszukuje.
+**Model 2 — sprawdza i zapisuje.** Dostaje ten sam obraz i wynik modelu 1. Potwierdza,
+czy odczyt zgadza się z tabelą, i zapisuje blok czytelnie: po jednym wpisie na środek,
+z nazwami kolumn przy wartościach, a komórki scalone z wierszem wyżej jako „(jak wyżej)".
 
-**Kod — pilnuje, nie tworzy.** Robi trzy rzeczy:
+**Kod** — render strony, dwa wywołania, `Chunk(source_id, page_id, seq, text)`.
+Dalej embedding, Qdrant, cytat ze stroną, konflikty — bez zmian.
 
-1. podstawia pod `null` wartość z wiersza wyżej z tej samej kolumny,
-2. sprawdza, czy każda wartość z modelu 1 występuje w tekście strony — to wyłapuje
-   zmyślone nazwy,
-3. sprawdza, czy zdanie z modelu 2 zawiera dokładnie te liczby, co wiersz — ani jednej
-   mniej, ani jednej więcej.
+## Dlaczego kod nie sprawdza wartości
 
-Trzecia kontrola jest najważniejsza, bo liczby w tych tabelach to dawki i karencje.
-Kod nie rozumie zdania, ale rozpozna, że „w dawce 25 l na ha" ma liczbę, której w wierszu
-nie było, a zgubiło `2,5–3`. Nie da się tego obejść gładkim stylem.
+Decyzja klienta z 23 września: ufamy modelom, kod wypada.
 
-Sprawdzanie zdania słowo po słowie nie działa — model odmienia wyrazy i dodaje spoiwo
-(„w fazie", „oznaczonej jako"), więc każde poprawne zdanie wyglądałoby na zmyślone.
+Podstawa: każda kontrola, jaką napisałem, myliła się częściej niż model. Sprawdzanie
+par sąsiednich słów zgłaszało błąd na poprawnych danych, bo model wstawia przecinki
+między nazwami. Sprawdzanie zdania słowo po słowie odpadało na odmianie („w fazie",
+„oznaczonej jako"). Podstawianie wartości ze scalonych komórek wymagało od kodu
+rozstrzygnięcia, czy pustka jest scaleniem, czy brakiem — czego nie umie.
 
-**Zapis jak każdy inny akapit:** `Chunk(source_id, page_id, seq, text)`. Dalej embedding,
-Qdrant, cytat ze stroną, konflikty — bez zmian.
+Cena tej decyzji, powiedziana wprost: `Devrinol 480` zamiast `450` wejdzie do bazy,
+jeśli oba modele przepuszczą ten błąd. W pomiarach znikał, gdy model dostawał tekst
+strony obok obrazu, ale gwarancji nie ma. Dawki z tych tabel wymagają oka redaktora
+przed publikacją.
 
-Kod nie wie, czy tabela ma kreski, ile ma kolumn ani czego dotyczy.
+## Dlaczego blok, a nie osobne zdania
+
+Sprawdzone na żywo: model piszący odpowiedź radzi sobie z całym blokiem tabeli lepiej
+niż z rozbitymi zdaniami. Zapytany o dawkę Sencora, gdy w bloku są dwie, odpowiedział:
+„standardowo 0,6 l na ha, natomiast w metodzie dawek dzielonych 0,35 l na ha".
+Zapytany o sposób działania, podał wartość ze scalonej komórki stojącej przy innym
+preparacie — sam skojarzył „(jak wyżej)".
+
+Ten sam blok zapisany surowo, z pionowymi kreskami i pustymi polami, dał „Nie ma"
+na pytanie o dawkę. Czytelność zapisu decyduje, nie ilość obróbki.
 
 ## Dlaczego oba źródła naraz
 
