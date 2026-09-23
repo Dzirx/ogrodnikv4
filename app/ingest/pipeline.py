@@ -38,7 +38,7 @@ def label_code(text: str) -> str:
     return re.sub(r"[^a-z0-9]+", "_", slug).strip("_")[:64]
 
 
-def _attach_labels(db, source: Source, labels: list[str]) -> None:
+def attach_labels(db, source: Source, labels: list[str]) -> None:
     for raw in labels:
         name = raw.strip()
         if not name:
@@ -82,7 +82,7 @@ def add_source(
         source.object_key = f"sources/{source.id}/original.{extension}"
         upload_bytes(source.object_key, data)
 
-        _attach_labels(db, source, labels or [])
+        attach_labels(db, source, labels or [])
         db.commit()
         return source.id
     finally:

@@ -26,9 +26,9 @@ from app.db.models import (
     Source,
     SourceLabel,
 )
-from app.ingest.pipeline import add_source
+from app.ingest.pipeline import add_source, attach_labels
 from app.ingest.podglad import render_strony
-from app.ingest.storage import download_bytes
+from app.ingest.storage import download_bytes, upload_bytes
 from app.tasks import queue, przetworz_zrodlo, odpowiedz_na_pytanie
 
 router = APIRouter()
@@ -656,6 +656,9 @@ def zrodlo(
             "strony": numery,
             "biezaca": biezaca,
             "akapity": akapity,
+            # Tresc do edycji tylko dla wklejonego tekstu - PDF-a nie da sie
+            # sensownie wlozyc w textarea, a i tak nie da sie go tak podmienic.
+            "tekst_zrodla": download_bytes(source.object_key).decode("utf-8") if source.kind == "text" else None,
             # Powrót tam, skąd redaktor przyszedł - razem z otwartym podglądem
             # akapitu. Bez tego wejście w książkę z rozmowy było ślepą uliczką:
             # zostawał przycisk wstecz przeglądarki albo szukanie wątku od nowa.
@@ -667,6 +670,46 @@ def zrodlo(
             **_wspolne(db),
         },
     )
+
+
+@router.post("/zrodla/{source_id}/edytuj")
+def edytuj_zrodlo(
+    source_id: int,
+    tytul: str = Form(...),
+    etykiety: str = Form(""),
+    autor: str = Form(""),
+    tekst: str = Form(""),
+    db: Session = Depends(get_db),
+):
+    """Poprawka tytułu, autora i tematów - a dla wklejonego tekstu, samej treści.
+
+    Tematy zastępujemy w całości, nie dopisujemy: to jest poprawka literówki,
+    nie drugi formularz dodawania. Zmiana treści (tylko źródła bez pliku PDF)
+    puszcza source_id przez process_source od nowa - dokładnie ten sam
+    mechanizm co przycisk "ponów", bo stare strony i akapity są tam czyszczone
+    przed ponownym podziałem. Nieruszona treść nie uruchamia ponownego
+    przetworzenia - inaczej poprawka samego tematu kosztowałaby drugi raz
+    embedding i wywołania modelu bez potrzeby."""
+    source = db.get(Source, source_id)
+    if source is None:
+        raise HTTPException(404, "Nie ma takiego źródła")
+
+    source.title = tytul.strip()[:512] or source.title
+    source.author = autor.strip() or None
+
+    db.query(SourceLabel).filter_by(source_id=source_id).delete()
+    attach_labels(db, source, [e for e in etykiety.split(",") if e.strip()])
+
+    if source.kind == "text" and tekst.strip() and tekst != download_bytes(source.object_key).decode("utf-8"):
+        upload_bytes(source.object_key, tekst.encode("utf-8"))
+        source.status = "pending"
+        source.error_text = None
+        db.commit()
+        queue.enqueue(przetworz_zrodlo, source_id, job_timeout=3600)
+        return RedirectResponse(f"/zrodla/{source_id}", status_code=303)
+
+    db.commit()
+    return RedirectResponse(f"/zrodla/{source_id}", status_code=303)
 
 
 @router.get("/zrodla/{source_id}/strona/{numer}.png")
