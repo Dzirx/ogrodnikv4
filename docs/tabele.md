@@ -21,9 +21,16 @@ renderuje stronę, wysyła, zapisuje wynik.
 z `page.get_text()`. Obraz mówi, co z czym sąsiaduje; tekst mówi, jak się to pisze.
 Zwraca nazwy kolumn — odczytane z tabeli, nie podane przez nas — i wiersze.
 
-**Model 2 — sprawdza i zapisuje.** Dostaje ten sam obraz i wynik modelu 1. Potwierdza,
-czy odczyt zgadza się z tabelą, i zapisuje blok czytelnie: po jednym wpisie na środek,
-z nazwami kolumn przy wartościach, a komórki scalone z wierszem wyżej jako „(jak wyżej)".
+**Model 2 — poprawia i zapisuje.** Dostaje ten sam obraz i wynik modelu 1. Nie ocenia go,
+tylko poprawia: pomylone kolumny, pasek sekcji wzięty za wartość, zmyślone nazwy nagłówków.
+Potem zapisuje blok czytelnie: po jednym wpisie na środek, z nazwami kolumn przy wartościach,
+a komórki scalone z wierszem wyżej jako „(jak wyżej)". Wypisuje też, co zmienił.
+
+Poprawianie jest lepsze od odrzucania: na stronie 8 model 1 wymyślił nazwy kolumn i wsadził
+pasek „TRIAZYNONY – grupa C1 wg HRAC 5" w kolumnę z dawką. Model 2 patrząc na obraz usunął
+ten pasek z dawki i odtworzył wartości — `Devrinol 450 S.C.`, `napropamid – 450 g/l`,
+`2,5–3 l`, karencja `nd`. Wersja, która zamiast poprawiać zgłaszała niezgodność, wyrzucała
+przy tym całą stronę.
 
 **Kod** — render strony, dwa wywołania, `Chunk(source_id, page_id, seq, text)`.
 Dalej embedding, Qdrant, cytat ze stroną, konflikty — bez zmian.
@@ -85,11 +92,14 @@ dziewięć wierszy — do bazy nie weszło nic.
 
 ## Co zostało do zrobienia
 
-1. **Nagłówki na stronach kontynuacji.** Tabela dawek ciągnie się od strony 7 do 15,
-   ale nazwy kolumn są tylko na pierwszej; dalej zostaje sam wiersz numeracji `1…9`.
-   Bez nich model wymyśla nazwy (`Nazwa środka`, `Termin stosowania`) i wszystko
-   przepada na kontroli. Nagłówki trzeba zapamiętać przy pierwszej stronie tabeli
-   i podawać kolejnym.
+1. **Nagłówki na stronach kontynuacji — jedyna rzecz, która na pewno wymaga naprawy.**
+   Tabela dawek ciągnie się od strony 7 do 15, ale nazwy kolumn są tylko na pierwszej;
+   dalej zostaje sam wiersz numeracji `1…9`. Oba modele wypełniają wtedy lukę zmyśleniem:
+   `Nazwa handlowa`, `Kategoria`, `Okres prewencji` zamiast `Środek ochrony roślin`,
+   `Karencja (dni)`, `Dodatkowe informacje`. Wartości są przy tym poprawne, ale stoją pod
+   złą etykietą — `Kategoria: 30` zamiast `Karencja: 30` — więc pytanie o karencję nie
+   trafi w ten akapit. Nagłówki trzeba zapamiętać przy pierwszej stronie tabeli i podawać
+   kolejnym.
 2. **Koszt drugiego modelu.** Sprawdzenie i napisanie zdań dla sześciu wierszy kosztowało
    1737 tokenów. Do zmierzenia na pełnej stronie, zanim powiemy, ile kosztuje książka.
 3. **Wzorce do mierzenia.** Mamy jeden, ręcznie spisany (`_tab/wzorzec_s8.json`, poza
