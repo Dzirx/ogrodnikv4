@@ -17,7 +17,7 @@ for nr in strony:
 t = time.time()
 wynik = _extract_pages("pdf", skan.tobytes())
 czas = time.time() - t
-print("%d stron w %.0f s -> %.1f s/stronę | z obrazu: %d" % (len(wynik), czas, czas/len(wynik), sum(1 for _t, z in wynik if z)))
-for nr, (tekst, z) in zip(strony, wynik):
+print("%d stron w %.0f s -> %.1f s/stronę | z obrazu: %d" % (len(wynik), czas, czas/len(wynik), sum(1 for _t, z, _tab in wynik if z)))
+for nr, (tekst, z, _tab) in zip(strony, wynik):
     print("   strona %d | z obrazu: %-5s | znaków %d" % (nr, z, len(tekst.strip())))
 o.close(); skan.close(); db.close()

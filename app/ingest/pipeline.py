@@ -25,6 +25,7 @@ from app.ingest.ocr import (
     zrzut_strony,
 )
 from app.ingest.storage import download_bytes, upload_bytes
+from app.ingest.tabele import czy_tabela, odczytaj_tabele
 from app.search.index import index_source
 
 
@@ -111,11 +112,17 @@ def process_source(source_id: int) -> None:
             db.query(Page).filter(Page.id.in_(stare_strony)).delete(synchronize_session=False)
             db.flush()
 
-        for number, (text, z_obrazu) in enumerate(pages_text, start=1):
+        for number, (text, z_obrazu, tabela) in enumerate(pages_text, start=1):
             page = Page(source_id=source.id, number=number, z_obrazu=z_obrazu)
             db.add(page)
             db.flush()
-            for seq, paragraph in enumerate(split_into_paragraphs(text)):
+            # Tabela idzie do bazy jako JEDEN akapit, nie przez zwykly podzial.
+            # split_into_paragraphs tnie po pustych liniach i po 700 znakach -
+            # rozerwalaby blok dokladnie tak, jak page.get_text() rozrywa
+            # tabele wierszami. Model piszacy odpowiedz potrzebuje calego
+            # bloku naraz (patrz "Dlaczego blok, a nie osobne zdania" w docs).
+            akapity = [text.strip()] if tabela and text.strip() else split_into_paragraphs(text)
+            for seq, paragraph in enumerate(akapity):
                 db.add(Chunk(source_id=source.id, page_id=page.id, seq=seq, text=paragraph))
 
         db.commit()
@@ -191,14 +198,16 @@ def przepnij_odnosniki(db, source_id: int) -> int:
     return przepiete
 
 
-def _extract_pages(kind: str, data: bytes) -> list[tuple[str, bool]]:
-    """Tekst kazdej strony wraz z informacja, czy trzeba go bylo odczytac z obrazu.
+def _extract_pages(kind: str, data: bytes) -> list[tuple[str, bool, bool]]:
+    """Tekst kazdej strony wraz z informacja, czy trzeba go bylo odczytac z obrazu
+    i czy to tabela (patrz docs/tabele.md - taka strona pomija zwykly podzial
+    na akapity, bo tresc uklada juz model, nie kod).
 
     Nie pytamy "czy to jest skan", tylko "gdzie na tej stronie jest tresc".
     Dzieki temu ta sama reguła obsluguje ksiazke tekstowa, skan i ksiazke
     mieszana - a klient niczego nie musi nam mowic przy wgrywaniu."""
     if kind != "pdf":
-        return [(data.decode("utf-8"), False)]
+        return [(data.decode("utf-8"), False, False)]
 
     # TEXT_INHIBIT_SPACES jest tu konieczne, nie kosmetyczne. Bez tej flagi
     # PyMuPDF wstawia spacje wszedzie tam, gdzie w PDF-ie jest wiekszy
@@ -210,14 +219,21 @@ def _extract_pages(kind: str, data: bytes) -> list[tuple[str, bool]]:
     # z akapitem i odpowiedz dostawala "Nie znalazlem w zrodle".
     flagi = fitz.TEXTFLAGS_TEXT | fitz.TEXT_INHIBIT_SPACES | fitz.TEXT_DEHYPHENATE
 
-    strony: list[tuple[str, bool]] = []
+    strony: list[tuple[str, bool, bool]] = []
     do_odczytu: list[int] = []
 
     with fitz.open(stream=data, filetype="pdf") as document:
         for numer, strona in enumerate(document):
             warstwa = strona.get_text("text", flags=flagi)
+            # Tabela z warstwy tekstowej - wykrywana z kresek w PDF-ie, nie
+            # z tego, co mowi tekst. Strona bez warstwy tekstowej (skan) tu
+            # nie trafia - taka idzie do OCR-u nizej, a tabel z OCR-u
+            # świadomie nie obsługujemy (patrz "Czego nie robimy" w docs).
+            tabela = czy_tabela(strona)
+            if tabela:
+                warstwa = odczytaj_tabele(strona, warstwa)
             pokrycie_tekstu, pokrycie_obrazow = gdzie_jest_tekst(strona)
-            strony.append((warstwa, False))
+            strony.append((warstwa, False, tabela))
 
             # Tekst pokrywa strone - nie ma czego szukac w obrazach.
             if pokrycie_tekstu >= 0.05:
@@ -242,6 +258,6 @@ def _extract_pages(kind: str, data: bytes) -> list[tuple[str, bool]]:
                 # Naglowek rozdzialu z warstwy tekstowej zostaje - jest
                 # dokladny co do znaku, a OCR moze go przekrecic.
                 warstwa = strony[numer][0]
-                strony[numer] = (f"{warstwa}\n{odczyt}".strip(), True)
+                strony[numer] = (f"{warstwa}\n{odczyt}".strip(), True, strony[numer][2])
 
     return strony

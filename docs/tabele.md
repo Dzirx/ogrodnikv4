@@ -1,6 +1,11 @@
 # Tabele w PDF
 
-Stan: **rozpoznane i zmierzone, kod jeszcze nie napisany.**
+Stan: **zaimplementowane.** Kod w `app/ingest/tabele.py`, podpięty w
+`_extract_pages` (`app/ingest/pipeline.py`). Sprawdzone na żywo na stronie 8
+programu ochrony pomidora gruntowego: 6/6 wpisów, wartości liczbowe (dawki,
+karencje, liczba zabiegów) zgodne co do znaku z ręcznie spisanym wzorcem
+(`_tab/wzorzec_s8.json`, poza repozytorium). Nazwy kolumn - patrz zastrzeżenie
+niżej w "Jak to robimy".
 
 ## Problem
 
@@ -12,10 +17,30 @@ preparatu — i nic tego nie sygnalizuje.
 Tabele są w dwóch z pięciu naszych plików: w obu programach ochrony (26 i 36 tabel)
 oraz jedna w broszurze PODR. Książki ogrodnicze są prozą.
 
+## Które strony dostają to traktowanie
+
+`czy_tabela` (PyMuPDF `find_tables(strategy="lines")`) odsiewa fałszywe
+wykrycia, ale progiem jest **liczba wierszy**, nie liczba kolumn. Pierwsza
+wersja odrzucała strony z więcej niż 12 kolumnami — i razem ze śmieciem
+(broszura PODR: dwie podpisane obok siebie fotografie, PyMuPDF widzi
+pionową kreskę i zgłasza tabelę 1×2) odrzucała też prawdziwe tabele dawek:
+program ochrony pomidora dzieli tę samą 9-kolumnową tabelę na 23–27 kolumn
+przez szum w liniach siatki na części stron. Liczba kolumn, jaką zobaczył
+kod, nie ma znaczenia — tabelę i tak czyta model patrzący na obraz. Próg
+został: mniej niż dwa wiersze albo same puste komórki to nie tabela, więcej
+— jest.
+
+Zmierzone na plikach klienta: broszura PODR — 1 strona (zgodnie z tym, co
+niżej), program ochrony pomidora gruntowego — 22 strony, szklarniowy — 33.
+Obie książki bez tabel (Sułek, uprawa amatorska) — zero.
+
 ## Jak to robimy
 
-Dwa wywołania modelu na stronę. Kod nie sprawdza treści i niczego nie składa —
-renderuje stronę, wysyła, zapisuje wynik.
+Dwa wywołania modelu na stronę, `temperature=0` (bez tego nazwy kolumn w
+jednym z przebiegów wyszły posklejane w nic nieznaczące złożenia zamiast
+krótkich nazw z nagłówka — z `temperature=0` nie powtórzyło się to w kolejnych
+próbach). Kod nie sprawdza treści i niczego nie składa — renderuje stronę,
+wysyła, zapisuje wynik.
 
 **Model 1 — czyta tabelę.** Dostaje stronę w dwóch postaciach: jako obraz i jako tekst
 z `page.get_text()`. Obraz mówi, co z czym sąsiaduje; tekst mówi, jak się to pisze.
@@ -74,7 +99,13 @@ Razem: **6/6 wpisów i 36/36 pól** wobec wzorca spisanego ręcznie ze strony 8.
 
 ## Co trafia do baz
 
-Blok z modelu 2 zapisujemy jako zwykły akapit i na tym nasza rola się kończy:
+Blok z modelu 2 zapisujemy jako zwykły akapit — ale jeden na całą stronę, nie
+przez zwykły podział na akapity. `split_into_paragraphs` tnie po pustych
+liniach i po 700 znakach; przepuszczony przez nią blok tabeli rozpadłby się
+dokładnie tak, jak rozrywa go `page.get_text()` — każdy wpis osobno, bez
+wspólnego kontekstu, którego dotyczy rozdział wyżej ("Dlaczego blok, a nie
+osobne zdania"). Strona z tabelą pomija ten krok i na tym nasza rola się
+kończy:
 
 ```python
 db.add(Chunk(source_id=..., page_id=..., seq=..., text=blok))   # Postgres
