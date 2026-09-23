@@ -50,7 +50,7 @@ services:
       postgres: {condition: service_healthy}
       minio: {condition: service_healthy}
       qdrant: {condition: service_started}
-    ports: ["127.0.0.1:8001:8000"]
+    ports: ["127.0.0.1:8002:8000"]
     volumes: [.:/srv/app]
 
   worker:
