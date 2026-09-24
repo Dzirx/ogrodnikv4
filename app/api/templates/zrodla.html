@@ -31,6 +31,9 @@
   .karta-zrodlo.rodzaj-text .naglowek-karty { background: #8a5a2e; }
   .karta-zrodlo .tresc-karty { padding: 0.9rem 1rem; display: flex; flex-direction: column; gap: 0.6rem; flex: 1; }
   .karta-zrodlo .opis-zrodla { color: var(--przygaszony); font-size: 0.88rem; margin: 0; }
+  {# Bez :empty wyjatku - ma rezerwowac miejsce ZAWSZE, tez gdy karta nie ma
+     ani autora, ani opisu, inaczej wracamy do tego samego przesuniecia. #}
+  .karta-zrodlo .info-karty { min-height: 1.4rem; }
   .karta-zrodlo .tematy-karty { display: flex; flex-wrap: wrap; gap: 0.3rem; }
   .stopka-karty { border-top: 1px solid var(--ramka); padding: 0.6rem 1rem; display: flex; justify-content: space-between; align-items: center; gap: 0.6rem; font-size: 0.85rem; margin-top: auto; flex-wrap: wrap; }
   .stopka-karty .stan { color: var(--przygaszony); }
@@ -100,8 +103,12 @@
       <strong>{{ z.title }}</strong>
     </div>
     <div class="tresc-karty">
-      {% if z.author %}<p class="podpowiedz" style="margin:0;">{{ z.author }}</p>{% endif %}
-      {% if z.description %}<p class="opis-zrodla">{{ z.description }}</p>{% endif %}
+      {# Stale miejsce na autora/opis - bez tego karta bez autora miala
+         etykiety wyzej niz karta z autorem w tym samym rzedzie. #}
+      <div class="info-karty">
+        {% if z.author %}<p class="podpowiedz" style="margin:0;">{{ z.author }}</p>{% endif %}
+        {% if z.description %}<p class="opis-zrodla">{{ z.description }}</p>{% endif %}
+      </div>
       <p class="tematy-karty">
         {% for e in z.labels %}<span class="etykieta">{{ e.name }}</span>{% endfor %}
       </p>
