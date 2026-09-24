@@ -51,6 +51,7 @@
     box-shadow: 0 8px 30px rgba(0,0,0,0.2); max-height: 88vh; overflow-y: auto;
   }
   .okno-edycji::backdrop { background: rgba(0,0,0,0.35); }
+  .okno-potwierdzenia { width: min(26rem, 92vw); }
   .okno-edycji h2 { margin: 0 0 0.8rem; font-size: 1.05rem; }
   .okno-edycji textarea { font: inherit; }
   .przyciski-okna { display: flex; gap: 0.5rem; margin-bottom: 0; }
@@ -110,12 +111,11 @@
           <a href="/zrodla/{{ z.id }}">Otwórz</a>
           <button type="button" data-edytuj="edycja-zrodlo-{{ z.id }}"
             title="Edytuj tytuł, autora, opis, tematy{% if z.kind == 'text' %} albo treść{% endif %}">Edytuj</button>
-          {# Ponowne przetworzenie - najczęściej po błędzie (limit API, zły plik),
-             ale bezpieczne też przy "gotowe": process_source czyści stare akapity
-             przed ponownym podziałem, więc nie zostaje drugi egzemplarz książki. #}
-          <form method="post" action="/zrodla/{{ z.id }}/przetworz" style="display:inline">
-            <button type="submit" title="Przetwórz źródło od nowa">↻ ponów</button>
-          </form>
+          {# Ponowne przetworzenie - z potwierdzeniem, zeby przypadkowe klikniecie
+             nie ruszylo gotowego zrodla. process_source jest bezpieczne do
+             ponownego wywolania (czysci stare akapity przed podzialem), ale
+             samo klikniecie ma byc swiadome, nie odruchowe. #}
+          <button type="button" data-edytuj="potwierdz-ponow-{{ z.id }}" title="Przetwórz źródło od nowa">↻ ponów</button>
         </span>
       </div>
     </div>
@@ -216,6 +216,20 @@
     </p>
   </form>
 </dialog>
+
+{# Potwierdzenie ponownego przetworzenia. Przycisk "Tak" jest poza formularzem
+   (siedzi w oknie dialogowym), ale atrybut form="" wiąże go z nim mimo to -
+   nie trzeba tego spinać JS-em. #}
+<dialog class="okno-edycji okno-potwierdzenia" id="potwierdz-ponow-{{ z.id }}">
+  <h2>Przetworzyć źródło od nowa?</h2>
+  <p class="podpowiedz">„{{ z.title }}” zostanie podzielone na strony i akapity od nowa -
+    stare zostaną zastąpione nowymi. Rób to po błędzie przetwarzania albo po poprawce treści.</p>
+  <p class="przyciski-okna">
+    <button type="submit" form="ponow-{{ z.id }}">Tak, przetwórz ponownie</button>
+    <button type="button" class="drugorzedny" data-zamknij="potwierdz-ponow-{{ z.id }}">Anuluj</button>
+  </p>
+</dialog>
+<form id="ponow-{{ z.id }}" method="post" action="/zrodla/{{ z.id }}/przetworz" style="display:none"></form>
 {% endfor %}
 
 <script>
