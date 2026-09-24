@@ -12,7 +12,7 @@ from app.db.base import SessionLocal
 from sqlalchemy.orm.attributes import flag_modified
 
 from app.answer.cytaty import bez_odstepow
-from app.db.models import Chunk, Label, Message, Page, Source, SourceLabel
+from app.db.models import Chunk, Conflict, ConflictOption, Label, Message, Page, Source, SourceLabel
 from concurrent.futures import ThreadPoolExecutor
 
 from app.ingest.chunks import split_into_paragraphs
@@ -108,9 +108,17 @@ def process_source(source_id: int) -> None:
         # obok nowych i wychodzily w wynikach jako drugi egzemplarz ksiazki.
         stare_strony = [p.id for p in db.query(Page).filter_by(source_id=source.id).all()]
         if stare_strony:
+            stare_chunki = [c.id for c in db.query(Chunk.id).filter(Chunk.page_id.in_(stare_strony)).all()]
+            # ConflictOption ma klucz obcy do Chunk bez ON DELETE CASCADE - baza
+            # odrzuci kasowanie akapitu, dopoki cokolwiek go cytuje jako strone
+            # sporu (choc raz rozstrzygnietego tez). Zdejmujemy to tutaj, a
+            # probujemy przypiac z powrotem do nowych akapitow nizej.
+            zdjete_opcje = _odepnij_konflikty(db, stare_chunki)
             db.query(Chunk).filter(Chunk.page_id.in_(stare_strony)).delete(synchronize_session=False)
             db.query(Page).filter(Page.id.in_(stare_strony)).delete(synchronize_session=False)
             db.flush()
+        else:
+            zdjete_opcje = []
 
         for number, (text, z_obrazu, tabela) in enumerate(pages_text, start=1):
             page = Page(source_id=source.id, number=number, z_obrazu=z_obrazu)
@@ -128,6 +136,7 @@ def process_source(source_id: int) -> None:
         db.commit()
         index_source(source_id)
         przepnij_odnosniki(db, source_id)
+        _przypnij_konflikty(db, source_id, zdjete_opcje)
 
         source = db.get(Source, source_id)
         source.status = "ready"
@@ -196,6 +205,56 @@ def przepnij_odnosniki(db, source_id: int) -> int:
 
     db.commit()
     return przepiete
+
+
+def _odepnij_konflikty(db, chunk_ids: list[int]) -> list[dict]:
+    """Zdejmuje ConflictOption wskazujace na akapity, ktore zaraz znikna.
+
+    ConflictOption.chunk_id ma klucz obcy bez ON DELETE CASCADE - bez tego
+    kroku baza odrzuca kasowanie akapitu, dopoki cokolwiek go cytuje jako
+    strone sporu, choc raz juz rozstrzygnietego. Zwraca dane potrzebne
+    _przypnij_konflikty do proby odzyskania po ponownym podziale."""
+    if not chunk_ids:
+        return []
+    opcje = db.query(ConflictOption).filter(ConflictOption.chunk_id.in_(chunk_ids)).all()
+    zdjete = [{"conflict_id": o.conflict_id, "value": o.value, "quote": o.quote} for o in opcje]
+    for opcja in opcje:
+        db.delete(opcja)
+    db.flush()
+    return zdjete
+
+
+def _przypnij_konflikty(db, source_id: int, zdjete: list[dict]) -> None:
+    """Proba przypiecia zdjetych opcji sporu do nowych akapitow.
+
+    Ta sama zasada co przepnij_odnosniki: cytat zostal zapisany w opcji, wiec
+    szukamy go w tresci nowych akapitow zamiast polegac na id, ktore i tak
+    juz nie istnieje. Konflikt spina zawsze DWA rozne zrodla (_zbuduj w
+    konflikty.py to gwarantuje), wiec ponowne przetworzenie jednego z nich
+    moze zdjac najwyzej jedna z dwoch opcji na raz.
+
+    Gdy cytatu nie ma juz w zadnym akapicie - bo tresc zrodla naprawde sie
+    zmienila, nie tylko przesunela - caly konflikt (wraz z ta opcja, ktora
+    ocalala) przestaje byc dwustronnym porownaniem i znika. Polowiczny spor
+    nie ma czego pokazac redaktorowi, a rozstrzygniecie bez jednej ze stron
+    nie da sie juz zweryfikowac."""
+    if not zdjete:
+        return
+    nowe = db.query(Chunk).filter_by(source_id=source_id).all()
+    for wpis in zdjete:
+        trafiony = next((c for c in nowe if bez_odstepow(wpis["quote"]) in bez_odstepow(c.text)), None)
+        if trafiony is not None:
+            db.add(ConflictOption(
+                conflict_id=wpis["conflict_id"], chunk_id=trafiony.id,
+                value=wpis["value"], quote=wpis["quote"],
+            ))
+        else:
+            # Bulk delete, nie db.delete(konflikt) - ORM-owa kaskada liczy
+            # ile ConflictOption ma skasowac z pamieci relacji, a jedna z nich
+            # zniknela juz w _odepnij_konflikty, wiec liczba by sie nie zgadzala.
+            db.query(ConflictOption).filter_by(conflict_id=wpis["conflict_id"]).delete(synchronize_session=False)
+            db.query(Conflict).filter_by(id=wpis["conflict_id"]).delete(synchronize_session=False)
+    db.commit()
 
 
 def _extract_pages(kind: str, data: bytes) -> list[tuple[str, bool, bool]]:
