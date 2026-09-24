@@ -8,8 +8,6 @@
   .lista-stron a { display: block; padding: 0.3rem 0.6rem; text-decoration: none; color: var(--tekst); border-radius: 4px; font-size: 0.9rem; }
   .lista-stron a:hover { background: var(--tlo); }
   .lista-stron a.biezaca { background: var(--akcent-jasny); color: var(--akcent); font-weight: 600; }
-  .edycja-zrodla > summary { cursor: pointer; color: var(--przygaszony); font-size: 0.9rem; margin-bottom: 0.6rem; }
-  .edycja-zrodla > summary:hover { color: var(--tekst); }
   @media (max-width: 900px) { .uklad-zrodla { grid-template-columns: 1fr; } }
 </style>
 {% endblock %}
@@ -23,37 +21,10 @@
   {% if zrodlo.author %}{{ zrodlo.author }} · {% endif %}
   {% for e in zrodlo.labels %}<span class="etykieta">{{ e.name }}</span>{% endfor %}
   {% if zrodlo.kind == "pdf" %}· <a href="/zrodla/{{ zrodlo.id }}/plik" target="_blank" rel="noopener">pobierz oryginał</a>{% endif %}
+  {# Edycja tytulu/autora/tematow/tresci przeniesiona na liste zrodel - stamtad
+     otwiera sie od razu, bez wchodzenia w ten ekran. #}
+  · <a href="/zrodla">edytuj na liście źródeł</a>
 </p>
-
-{# Zwiniete: to nie jest rzecz, po ktora redaktor przychodzi na ten ekran co
-   dzien - tylko poprawka literowki w temacie albo zle wklejonego tekstu. #}
-<details class="edycja-zrodla">
-  <summary>✎ Edytuj tytuł, autora, tematy{% if zrodlo.kind == "text" %} albo treść{% endif %}</summary>
-  <form method="post" action="/zrodla/{{ zrodlo.id }}/edytuj" class="karta" style="max-width: 44rem; margin-bottom: 1.5rem;">
-    <div class="pole">
-      <label for="tytul">Tytuł</label>
-      <input type="text" id="tytul" name="tytul" required value="{{ zrodlo.title }}">
-    </div>
-    <div class="pole">
-      <label for="etykiety">Tematy</label>
-      <input type="text" id="etykiety" name="etykiety" value="{{ zrodlo.labels | map(attribute='name') | join(', ') }}">
-      <p class="podpowiedz">Po przecinku. Zastępuje obecne tematy tego źródła, nie dopisuje do nich.</p>
-    </div>
-    <div class="pole">
-      <label for="autor">Autor</label>
-      <input type="text" id="autor" name="autor" value="{{ zrodlo.author or '' }}">
-    </div>
-    {% if zrodlo.kind == "text" %}
-    <div class="pole">
-      <label for="tekst">Treść</label>
-      <textarea id="tekst" name="tekst" rows="12">{{ tekst_zrodla }}</textarea>
-      <p class="podpowiedz">Zmiana treści uruchamia ponowne przetworzenie źródła - potrwa chwilę,
-        jak po kliknięciu „ponów”.</p>
-    </div>
-    {% endif %}
-    <button type="submit">Zapisz</button>
-  </form>
-</details>
 
 <div class="uklad-zrodla">
   <div class="kolumna karta">

@@ -556,12 +556,19 @@ def zrodla(
         .all()
     )
 
+    # Tresc do edycji w oknie - tylko dla wklejonego tekstu i tylko dla
+    # wyswietlanych wierszy, nie calej bazy. PDF-a nie da sie tak podmienic.
+    tekst_zrodel = {
+        z.id: download_bytes(z.object_key).decode("utf-8") for z in wybrane if z.kind == "text"
+    }
+
     return templates.TemplateResponse(
         "zrodla.html",
         {
             "request": request,
             "strona": "zrodla",
             "zrodla": wybrane,
+            "tekst_zrodel": tekst_zrodel,
             "liczba_akapitow": liczniki,
             "strony": strony,
             "wszystkich": db.query(Source).count(),

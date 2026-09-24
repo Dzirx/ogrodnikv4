@@ -8,6 +8,18 @@
   .etykiety-filtr { display: flex; flex-wrap: wrap; gap: 0.4rem; margin: 0 0 1rem; }
   .etykiety-filtr .etykieta { text-decoration: none; }
   .etykiety-filtr .wybrana { background: var(--akcent); color: #fff; }
+
+  {# Te same okno modalne co w chat.html (poprawa odpowiedzi) - jeden spójny
+     wygląd okien w całym panelu, nie osobny styl na każdym ekranie. #}
+  .okno-edycji {
+    border: 1px solid var(--ramka); border-radius: 10px; padding: 1.2rem;
+    width: min(42rem, 92vw); background: var(--karta); color: var(--tekst);
+    box-shadow: 0 8px 30px rgba(0,0,0,0.2);
+  }
+  .okno-edycji::backdrop { background: rgba(0,0,0,0.35); }
+  .okno-edycji h2 { margin: 0 0 0.8rem; font-size: 1.05rem; }
+  .okno-edycji textarea { font: inherit; }
+  .przyciski-okna { display: flex; gap: 0.5rem; margin-bottom: 0; }
 </style>
 {% endblock %}
 {% block content %}
@@ -88,6 +100,11 @@
       <form method="post" action="/zrodla/{{ z.id }}/przetworz" style="display:inline">
         <button type="submit" class="drugorzedny" style="padding:0.15rem 0.5rem; font-size:0.8rem;" title="Przetwórz źródło od nowa">↻ ponów</button>
       </form>
+      {# Edycja od razu z listy - żeby literówkę w temacie dało się poprawić
+         bez wchodzenia w książkę. #}
+      <button type="button" class="drugorzedny" style="padding:0.15rem 0.5rem; font-size:0.8rem;"
+        data-edytuj="edycja-zrodlo-{{ z.id }}"
+        title="Edytuj tytuł, autora, tematy{% if z.kind == 'text' %} albo treść{% endif %}">✎ edytuj</button>
     </td>
   </tr>
   {% endfor %}
@@ -100,4 +117,59 @@
 {% else %}
 <p class="pusto">Nie ma jeszcze żadnych źródeł.</p>
 {% endif %}
+
+{# Okna edycji - poza tabelą, żeby <dialog> nie siedział w środku <td>. Jedno
+   na źródło, otwierane przyciskiem "✎ edytuj" z wiersza wyżej. #}
+{% for z in zrodla %}
+<dialog class="okno-edycji" id="edycja-zrodlo-{{ z.id }}">
+  <form method="post" action="/zrodla/{{ z.id }}/edytuj">
+    <h2>Edytuj źródło</h2>
+    <div class="pole">
+      <label for="tytul-{{ z.id }}">Tytuł</label>
+      <input type="text" id="tytul-{{ z.id }}" name="tytul" required value="{{ z.title }}">
+    </div>
+    <div class="pole">
+      <label for="etykiety-{{ z.id }}">Tematy</label>
+      <input type="text" id="etykiety-{{ z.id }}" name="etykiety" value="{{ z.labels | map(attribute='name') | join(', ') }}">
+      <p class="podpowiedz">Po przecinku. Zastępuje obecne tematy tego źródła, nie dopisuje do nich.</p>
+    </div>
+    <div class="pole">
+      <label for="autor-{{ z.id }}">Autor</label>
+      <input type="text" id="autor-{{ z.id }}" name="autor" value="{{ z.author or '' }}">
+    </div>
+    {% if z.kind == "text" %}
+    <div class="pole">
+      <label for="tekst-{{ z.id }}">Treść</label>
+      <textarea id="tekst-{{ z.id }}" name="tekst" rows="10">{{ tekst_zrodel.get(z.id, '') }}</textarea>
+      <p class="podpowiedz">Zmiana treści uruchamia ponowne przetworzenie źródła - potrwa chwilę,
+        jak po kliknięciu „ponów”.</p>
+    </div>
+    {% endif %}
+    <p class="przyciski-okna">
+      <button type="submit">Zapisz</button>
+      <button type="button" class="drugorzedny" data-zamknij="edycja-zrodlo-{{ z.id }}">Anuluj</button>
+    </p>
+  </form>
+</dialog>
+{% endfor %}
+
+<script>
+  // Otwieranie i zamykanie okien edycji - te same atrybuty co w oknie
+  // poprawy odpowiedzi na ekranie Pytań, żeby zachowanie było spójne.
+  document.querySelectorAll('[data-edytuj]').forEach(function (przycisk) {
+    przycisk.addEventListener('click', function () {
+      document.getElementById(przycisk.dataset.edytuj).showModal();
+    });
+  });
+  document.querySelectorAll('[data-zamknij]').forEach(function (przycisk) {
+    przycisk.addEventListener('click', function () {
+      document.getElementById(przycisk.dataset.zamknij).close();
+    });
+  });
+  document.querySelectorAll('.okno-edycji').forEach(function (okno) {
+    okno.addEventListener('click', function (zdarzenie) {
+      if (zdarzenie.target === okno) { okno.close(); }
+    });
+  });
+</script>
 {% endblock %}
