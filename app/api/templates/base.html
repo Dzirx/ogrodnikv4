@@ -44,10 +44,7 @@
   {# Natywny przycisk "Wybierz plik" jest szary i nie pasuje do reszty -
      ::file-selector-button pozwala go przestylować bez JS-owego zastępowania
      całego <input type="file">. #}
-  input[type="file"] {
-    font: inherit; width: 100%; padding: 0.4rem; font-size: 0.9rem;
-    border: 1px solid var(--ramka); border-radius: 6px; background: var(--karta); color: var(--przygaszony);
-  }
+  input[type="file"] { font: inherit; font-size: 0.9rem; color: var(--przygaszony); }
   input[type="file"]::file-selector-button {
     font: inherit; background: var(--akcent); color: #fff; border: 0;
     padding: 0.5rem 1rem; border-radius: 6px; cursor: pointer; margin-right: 0.7rem;
