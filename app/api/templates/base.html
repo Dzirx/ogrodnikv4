@@ -69,10 +69,10 @@
 <header>
   <span class="marka">Ogrodnik</span>
   <nav>
-    <a href="/" class="{% if strona == 'pytania' %}aktywny{% endif %}">Pytania</a>
-    <a href="/zrodla" class="{% if strona == 'zrodla' %}aktywny{% endif %}">Źródła</a>
+    <a href="/" class="{% if strona == 'pytania' %}aktywny{% endif %}">Pracownia</a>
+    <a href="/zrodla" class="{% if strona == 'zrodla' %}aktywny{% endif %}">Biblioteka</a>
     <a href="/konflikty" class="{% if strona == 'konflikty' %}aktywny{% endif %}">
-      Do rozstrzygnięcia{% if liczba_konfliktow %} ({{ liczba_konfliktow }}){% endif %}
+      Do ustalenia{% if liczba_konfliktow %} ({{ liczba_konfliktow }}){% endif %}
     </a>
   </nav>
 </header>

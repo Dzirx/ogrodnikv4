@@ -53,7 +53,7 @@
   </script>
 </div>
 {% endmacro %}
-{% block title %}{% if rozmowa %}{{ rozmowa.title }}{% else %}Pytania{% endif %}{% endblock %}
+{% block title %}{% if rozmowa %}{{ rozmowa.title }}{% else %}Pracownia{% endif %}{% endblock %}
 {% block style %}
 <style>
   /* Trzy kolumny: wybór źródeł, rozmowa, podgląd strony źródła.
@@ -189,7 +189,7 @@
           <p><button type="submit">Zapytaj</button></p>
         </form>
         {% else %}
-        <p class="pusto">Najpierw dodaj źródło w zakładce <a href="/zrodla">Źródła</a>.</p>
+        <p class="pusto">Najpierw dodaj źródło w zakładce <a href="/zrodla">Biblioteka</a>.</p>
         {% endif %}
       {% else %}
         {% for w in wiadomosci %}
@@ -242,7 +242,7 @@
                   {#- Wartosc rozstrzygnieta przez czlowieka nie dostaje odnosnika do
                       ksiazki, bo ksiazka mowi co innego. Zamiast numeru stoi przy niej
                       slowo, ktore mowi wprost, skad sie wziela. -#}
-                  {%- if czesc.ustalenie %}<span class="ustalenie" title="{{ czesc.ustalenie }} — rozstrzygnięte w zakładce Do rozstrzygnięcia">ustalenie</span>{% endif -%}
+                  {%- if czesc.ustalenie %}<span class="ustalenie" title="{{ czesc.ustalenie }} — rozstrzygnięte w zakładce Do ustalenia">ustalenie</span>{% endif -%}
                 {%- endfor -%}
               </p>
               {% endif %}
