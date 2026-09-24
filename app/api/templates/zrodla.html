@@ -2,7 +2,12 @@
 {% block title %}Źródła{% endblock %}
 {% block style %}
 <style>
-  .dodawanie > summary { cursor: pointer; font-weight: 500; padding: 0.3rem 0; }
+  {# Bez natywnego trojkacika przegladarki - obok wlasnego znaku "+" wygladalo
+     to jak dwa znaczniki naraz. Wlasny zmienia sie na "-" po rozwinieciu. #}
+  .dodawanie > summary { cursor: pointer; font-weight: 500; padding: 0.3rem 0; list-style: none; }
+  .dodawanie > summary::-webkit-details-marker { display: none; }
+  .dodawanie > summary::before { content: "+ "; color: var(--akcent); font-weight: 700; }
+  .dodawanie[open] > summary::before { content: "− "; }
   .szukanie { display: flex; gap: 0.5rem; align-items: center; max-width: 34rem; margin-bottom: 0.8rem; }
   .szukanie .pole { flex: 1; margin: 0; }
   .etykiety-filtr { display: flex; flex-wrap: wrap; gap: 0.4rem; margin: 0 0 1rem; }
@@ -34,7 +39,7 @@
 {# Formularz zwinięty: przy stu książkach ekran służy do szukania, nie do
    dodawania. Rozwija się jednym kliknięciem i zostaje rozwinięty po błędzie. #}
 <details class="dodawanie" {% if blad %}open{% endif %}>
-  <summary>+ Dodaj źródło</summary>
+  <summary>Dodaj źródło</summary>
   <div class="karta" style="max-width: 60rem; margin: 0.8rem 0 1.5rem;">
   <form method="post" action="/zrodla" enctype="multipart/form-data">
     <div class="pole">
