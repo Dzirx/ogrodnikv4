@@ -8,6 +8,10 @@
   .etykiety-filtr { display: flex; flex-wrap: wrap; gap: 0.4rem; margin: 0 0 1rem; }
   .etykiety-filtr .etykieta { text-decoration: none; }
   .etykiety-filtr .wybrana { background: var(--akcent); color: #fff; }
+  {# Pole ma domyslnie max-width: 42rem z base.html - przy waskiej karcie
+     ledwo widac roznice, wiec przy szerszej karcie trzeba to zdjac osobno,
+     inaczej pola zostalyby waskie w duzo szerszym, pustym pudelku. #}
+  .dodawanie .pole { max-width: none; }
 
   {# Te same okno modalne co w chat.html (poprawa odpowiedzi) - jeden spójny
      wygląd okien w całym panelu, nie osobny styl na każdym ekranie. #}
@@ -31,7 +35,7 @@
    dodawania. Rozwija się jednym kliknięciem i zostaje rozwinięty po błędzie. #}
 <details class="dodawanie" {% if blad %}open{% endif %}>
   <summary>+ Dodaj źródło</summary>
-  <div class="karta" style="max-width: 44rem; margin: 0.8rem 0 1.5rem;">
+  <div class="karta" style="max-width: 60rem; margin: 0.8rem 0 1.5rem;">
   <form method="post" action="/zrodla" enctype="multipart/form-data">
     <div class="pole">
       <label for="tytul">Tytuł</label>

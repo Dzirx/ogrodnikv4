@@ -41,6 +41,18 @@
     border: 1px solid var(--ramka); border-radius: 6px; background: var(--karta); color: var(--tekst);
   }
   textarea { min-height: 6rem; resize: vertical; }
+  {# Natywny przycisk "Wybierz plik" jest szary i nie pasuje do reszty -
+     ::file-selector-button pozwala go przestylować bez JS-owego zastępowania
+     całego <input type="file">. #}
+  input[type="file"] {
+    font: inherit; width: 100%; padding: 0.4rem; font-size: 0.9rem;
+    border: 1px solid var(--ramka); border-radius: 6px; background: var(--karta); color: var(--przygaszony);
+  }
+  input[type="file"]::file-selector-button {
+    font: inherit; background: var(--akcent); color: #fff; border: 0;
+    padding: 0.5rem 1rem; border-radius: 6px; cursor: pointer; margin-right: 0.7rem;
+  }
+  input[type="file"]::file-selector-button:hover { filter: brightness(1.1); }
   label { display: block; font-weight: 500; margin-bottom: 0.25rem; }
   .pole { margin-bottom: 1rem; max-width: 42rem; }
   .podpowiedz { color: var(--przygaszony); font-size: 0.875rem; }
