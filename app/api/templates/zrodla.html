@@ -2,28 +2,53 @@
 {% block title %}Źródła{% endblock %}
 {% block style %}
 <style>
-  {# Bez natywnego trojkacika przegladarki - obok wlasnego znaku "+" wygladalo
-     to jak dwa znaczniki naraz. Wlasny zmienia sie na "-" po rozwinieciu. #}
-  .dodawanie > summary { cursor: pointer; font-weight: 500; padding: 0.3rem 0; list-style: none; }
-  .dodawanie > summary::-webkit-details-marker { display: none; }
-  .dodawanie > summary::before { content: "+ "; color: var(--akcent); font-weight: 700; }
-  .dodawanie[open] > summary::before { content: "− "; }
-  .szukanie { display: flex; gap: 0.5rem; align-items: center; max-width: 34rem; margin-bottom: 0.8rem; }
+  .podglowek { color: var(--przygaszony); max-width: 46rem; margin: 0 0 1.2rem; }
+  .pasek-narzedzi { display: flex; flex-wrap: wrap; gap: 0.8rem; align-items: center; justify-content: space-between; margin-bottom: 1rem; }
+  .szukanie { display: flex; gap: 0.5rem; align-items: center; max-width: 34rem; margin: 0; }
   .szukanie .pole { flex: 1; margin: 0; }
-  .etykiety-filtr { display: flex; flex-wrap: wrap; gap: 0.4rem; margin: 0 0 1rem; }
-  .etykiety-filtr .etykieta { text-decoration: none; }
-  .etykiety-filtr .wybrana { background: var(--akcent); color: #fff; }
-  {# Pole ma domyslnie max-width: 42rem z base.html - przy waskiej karcie
-     ledwo widac roznice, wiec przy szerszej karcie trzeba to zdjac osobno,
-     inaczej pola zostalyby waskie w duzo szerszym, pustym pudelku. #}
-  .dodawanie .pole { max-width: none; }
+
+  .naglowek-tematow { font-size: 0.72rem; letter-spacing: 0.06em; color: var(--przygaszony); font-weight: 600; text-transform: uppercase; margin-right: 0.2rem; }
+  .etykiety-filtr { display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: center; margin: 0 0 1.2rem; }
+  {# W tym pasku pigułki maja byc obrysowane, nie wypelnione jak znaczniki
+     tematow na kartach - inaczej caly rzad wyglada jak jedna zielona plama. #}
+  .etykiety-filtr .etykieta { text-decoration: none; background: none; border: 1px solid var(--ramka); color: var(--tekst); padding: 0.3rem 0.9rem; }
+  .etykiety-filtr .wybrana { background: var(--akcent); color: #fff; border-color: var(--akcent); }
+
+  .siatka-zrodel { display: grid; grid-template-columns: repeat(auto-fill, minmax(17rem, 1fr)); gap: 1rem; }
+  .karta-zrodlo { border: 1px solid var(--ramka); border-radius: 10px; overflow: hidden; background: var(--karta); display: flex; flex-direction: column; }
+  .karta-zrodlo .naglowek-karty { padding: 0.8rem 1rem; color: #fff; }
+  .karta-zrodlo .naglowek-karty small { display: block; text-transform: uppercase; letter-spacing: 0.05em; font-size: 0.7rem; opacity: 0.85; margin-bottom: 0.2rem; }
+  .karta-zrodlo .naglowek-karty strong { display: block; font-size: 1.02rem; line-height: 1.3; }
+  {# Kolor po rodzaju zrodla, nie po temacie - to jedyne dwa rodzaje, jakie
+     program rozroznia (PDF i wklejony tekst), wiec dwa kolory wystarcza. #}
+  .karta-zrodlo.rodzaj-pdf .naglowek-karty { background: var(--akcent); }
+  .karta-zrodlo.rodzaj-text .naglowek-karty { background: #8a5a2e; }
+  .karta-zrodlo .tresc-karty { padding: 0.9rem 1rem; display: flex; flex-direction: column; gap: 0.6rem; flex: 1; }
+  .karta-zrodlo .opis-zrodla { color: var(--przygaszony); font-size: 0.88rem; margin: 0; }
+  .karta-zrodlo .tematy-karty { display: flex; flex-wrap: wrap; gap: 0.3rem; }
+  .stopka-karty { border-top: 1px solid var(--ramka); padding: 0.6rem 1rem; display: flex; justify-content: space-between; align-items: center; gap: 0.6rem; font-size: 0.85rem; margin-top: auto; flex-wrap: wrap; }
+  .stopka-karty .stan { color: var(--przygaszony); }
+  .stopka-karty .stan.blad { color: var(--uwaga); }
+  .stopka-karty .akcje { display: flex; gap: 0.7rem; white-space: nowrap; }
+  .stopka-karty .akcje button, .stopka-karty .akcje a { background: none; border: 0; padding: 0; font: inherit; font-size: 0.85rem; color: var(--akcent); cursor: pointer; text-decoration: none; }
+  .stopka-karty .akcje button:hover, .stopka-karty .akcje a:hover { text-decoration: underline; }
+
+  .karta-dodaj {
+    border: 2px dashed var(--ramka); border-radius: 10px; background: none; cursor: pointer;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.3rem;
+    color: var(--przygaszony); min-height: 12rem; font: inherit; width: 100%; text-align: center;
+  }
+  .karta-dodaj:hover { border-color: var(--akcent); color: var(--akcent); }
+  .karta-dodaj .plus { font-size: 1.8rem; line-height: 1; color: var(--akcent); }
+  .karta-dodaj strong { color: var(--tekst); font-weight: 600; }
+  .karta-dodaj small { font-size: 0.78rem; }
 
   {# Te same okno modalne co w chat.html (poprawa odpowiedzi) - jeden spójny
      wygląd okien w całym panelu, nie osobny styl na każdym ekranie. #}
   .okno-edycji {
     border: 1px solid var(--ramka); border-radius: 10px; padding: 1.2rem;
     width: min(42rem, 92vw); background: var(--karta); color: var(--tekst);
-    box-shadow: 0 8px 30px rgba(0,0,0,0.2);
+    box-shadow: 0 8px 30px rgba(0,0,0,0.2); max-height: 88vh; overflow-y: auto;
   }
   .okno-edycji::backdrop { background: rgba(0,0,0,0.35); }
   .okno-edycji h2 { margin: 0 0 0.8rem; font-size: 1.05rem; }
@@ -32,16 +57,97 @@
 </style>
 {% endblock %}
 {% block content %}
-<h1>Źródła{% if pasujacych != wszystkich %} <span class="podpowiedz">— {{ pasujacych }} z {{ wszystkich }}</span>{% endif %}</h1>
+<h1>Biblioteka źródeł{% if pasujacych != wszystkich %} <span class="podpowiedz">— {{ pasujacych }} z {{ wszystkich }}</span>{% endif %}</h1>
+<p class="podglowek">Każde źródło dodajesz raz — etykiety mówią, do jakich tematów pasuje.
+  Jedno źródło może służyć kilku tematom naraz.</p>
 
-{% if blad %}<p class="karta" style="border-color: var(--uwaga)">{{ blad }}</p>{% endif %}
+{% if blad %}<p class="karta" style="border-color: var(--uwaga); max-width: 46rem;">{{ blad }}</p>{% endif %}
 
-{# Formularz zwinięty: przy stu książkach ekran służy do szukania, nie do
-   dodawania. Rozwija się jednym kliknięciem i zostaje rozwinięty po błędzie. #}
-<details class="dodawanie" {% if blad %}open{% endif %}>
-  <summary>Dodaj źródło</summary>
-  <div class="karta" style="max-width: 60rem; margin: 0.8rem 0 1.5rem;">
+<div class="pasek-narzedzi">
+  <form method="get" action="/zrodla" class="szukanie">
+    <div class="pole"><input type="search" name="szukaj" value="{{ szukaj }}" placeholder="Szukaj po tytule albo autorze"></div>
+    {% if etykieta %}<input type="hidden" name="etykieta" value="{{ etykieta }}">{% endif %}
+    <button type="submit" class="drugorzedny">Szukaj</button>
+    {% if szukaj or etykieta %}<a href="/zrodla" class="podpowiedz">wyczyść</a>{% endif %}
+  </form>
+</div>
+
+{% if etykiety %}
+<p class="etykiety-filtr">
+  <span class="naglowek-tematow">Tematy</span>
+  <a href="/zrodla{% if szukaj %}?szukaj={{ szukaj }}{% endif %}"
+     class="etykieta{% if not etykieta %} wybrana{% endif %}">wszystkie ({{ wszystkich }})</a>
+  {% for kod, nazwa, ile in etykiety %}
+  <a href="/zrodla?etykieta={{ kod }}{% if szukaj %}&szukaj={{ szukaj }}{% endif %}"
+     class="etykieta{% if etykieta == kod %} wybrana{% endif %}">{{ nazwa }} ({{ ile }})</a>
+  {% endfor %}
+</p>
+{% endif %}
+
+{% if zrodla %}
+<div class="siatka-zrodel">
+  {% for z in zrodla %}
+  <div class="karta-zrodlo rodzaj-{{ z.kind }}">
+    <div class="naglowek-karty">
+      <small>{% if z.kind == "pdf" %}PDF{% else %}Wklejony tekst{% endif %}</small>
+      <strong>{{ z.title }}</strong>
+    </div>
+    <div class="tresc-karty">
+      {% if z.author %}<p class="podpowiedz" style="margin:0;">{{ z.author }}</p>{% endif %}
+      {% if z.description %}<p class="opis-zrodla">{{ z.description }}</p>{% endif %}
+      <p class="tematy-karty">
+        {% for e in z.labels %}<span class="etykieta">{{ e.name }}</span>{% endfor %}
+      </p>
+      <div class="stopka-karty">
+        <span class="stan{% if z.status == 'error' %} blad{% endif %}">
+          {% if z.status == "ready" %}{{ liczba_akapitow.get(z.id, 0) }} akapitów
+            {%- set s = strony.get(z.id) %}
+            {%- if s %}<br><small>{{ s.tekst + s.obraz }} stron: {{ s.tekst }} z tekstu{% if s.obraz %}, {{ s.obraz }} z obrazu{% endif %}</small>{% endif %}
+          {% elif z.status == "error" %}błąd: {{ z.error_text }}
+          {% else %}przetwarzanie…{% endif %}
+        </span>
+        <span class="akcje">
+          <a href="/zrodla/{{ z.id }}">Otwórz</a>
+          <button type="button" data-edytuj="edycja-zrodlo-{{ z.id }}"
+            title="Edytuj tytuł, autora, opis, tematy{% if z.kind == 'text' %} albo treść{% endif %}">Edytuj</button>
+          {# Ponowne przetworzenie - najczęściej po błędzie (limit API, zły plik),
+             ale bezpieczne też przy "gotowe": process_source czyści stare akapity
+             przed ponownym podziałem, więc nie zostaje drugi egzemplarz książki. #}
+          <form method="post" action="/zrodla/{{ z.id }}/przetworz" style="display:inline">
+            <button type="submit" title="Przetwórz źródło od nowa">↻ ponów</button>
+          </form>
+        </span>
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+
+  {# Dodawanie w tym samym oknie modalnym co edycja, jako kafelek w siatce -
+     zamiast rozwijanej sekcji, którą trzeba było najpierw znaleźć. #}
+  <button type="button" class="karta-dodaj" data-edytuj="okno-dodaj">
+    <span class="plus">+</span>
+    <strong>Dodaj źródło</strong>
+    <small>PDF, tekst, wklejone wpisy</small>
+  </button>
+</div>
+{% if starsze %}
+<p style="margin-top: 1rem;"><a href="/zrodla?ile={{ nastepne }}{% if szukaj %}&szukaj={{ szukaj }}{% endif %}{% if etykieta %}&etykieta={{ etykieta }}{% endif %}">Pokaż więcej ({{ starsze }})</a></p>
+{% endif %}
+{% elif szukaj or etykieta %}
+<p class="pusto">Nic nie pasuje. <a href="/zrodla">Pokaż wszystkie ({{ wszystkich }})</a></p>
+{% else %}
+<div class="siatka-zrodel">
+  <button type="button" class="karta-dodaj" data-edytuj="okno-dodaj">
+    <span class="plus">+</span>
+    <strong>Dodaj pierwsze źródło</strong>
+    <small>PDF, tekst, wklejone wpisy</small>
+  </button>
+</div>
+{% endif %}
+
+<dialog class="okno-edycji" id="okno-dodaj">
   <form method="post" action="/zrodla" enctype="multipart/form-data">
+    <h2>Dodaj źródło</h2>
     <div class="pole">
       <label for="tytul">Tytuł</label>
       <input type="text" id="tytul" name="tytul" required placeholder="np. Sułek, Uprawa pomidora pod osłonami">
@@ -56,6 +162,10 @@
       <input type="text" id="autor" name="autor">
     </div>
     <div class="pole">
+      <label for="opis">Opis</label>
+      <input type="text" id="opis" name="opis" placeholder="Krótko, o czym jest to źródło - widać na karcie">
+    </div>
+    <div class="pole">
       <label for="plik">Plik PDF</label>
       <input type="file" id="plik" name="plik" accept=".pdf">
     </div>
@@ -63,72 +173,14 @@
       <label for="tekst">albo wklej tekst</label>
       <textarea id="tekst" name="tekst" placeholder="Wklej treść — na przykład swoje wpisy z Facebooka. Akapity oddzielaj pustą linią."></textarea>
     </div>
-    <button type="submit">Dodaj źródło</button>
+    <p class="przyciski-okna">
+      <button type="submit">Dodaj źródło</button>
+      <button type="button" class="drugorzedny" data-zamknij="okno-dodaj">Anuluj</button>
+    </p>
   </form>
-  </div>
-</details>
+</dialog>
 
-<form method="get" action="/zrodla" class="szukanie">
-  <div class="pole"><input type="search" name="szukaj" value="{{ szukaj }}" placeholder="Szukaj po tytule albo autorze"></div>
-  {% if etykieta %}<input type="hidden" name="etykieta" value="{{ etykieta }}">{% endif %}
-  <button type="submit" class="drugorzedny">Szukaj</button>
-  {% if szukaj or etykieta %}<a href="/zrodla" class="podpowiedz">wyczyść</a>{% endif %}
-</form>
-
-{% if etykiety %}
-<p class="etykiety-filtr">
-  <a href="/zrodla{% if szukaj %}?szukaj={{ szukaj }}{% endif %}"
-     class="etykieta{% if not etykieta %} wybrana{% endif %}">wszystkie ({{ wszystkich }})</a>
-  {% for kod, nazwa, ile in etykiety %}
-  <a href="/zrodla?etykieta={{ kod }}{% if szukaj %}&szukaj={{ szukaj }}{% endif %}"
-     class="etykieta{% if etykieta == kod %} wybrana{% endif %}">{{ nazwa }} ({{ ile }})</a>
-  {% endfor %}
-</p>
-{% endif %}
-
-{% if zrodla %}
-<table>
-  <tr><th>Tytuł</th><th>Tematy</th><th>Stan</th></tr>
-  {% for z in zrodla %}
-  <tr>
-    <td>
-      <a href="/zrodla/{{ z.id }}">{{ z.title }}</a>
-      {% if z.author %}<br><span class="podpowiedz">{{ z.author }}</span>{% endif %}
-    </td>
-    <td>{% for e in z.labels %}<span class="etykieta">{{ e.name }}</span>{% else %}<span class="podpowiedz">—</span>{% endfor %}</td>
-    <td>
-      {% if z.status == "ready" %}{{ liczba_akapitow.get(z.id, 0) }} akapitów
-      {%- set s = strony.get(z.id) %}
-      {%- if s %}<br><small class="podpowiedz">{{ s.tekst + s.obraz }} stron:
-        {{ s.tekst }} z tekstu{% if s.obraz %}, {{ s.obraz }} odczytanych z obrazu{% endif %}</small>{% endif %}
-      {% elif z.status == "error" %}<span style="color: var(--uwaga)">błąd: {{ z.error_text }}</span>
-      {% else %}przetwarzanie…{% endif %}
-      {# Ponowne przetworzenie - najczęściej po błędzie (limit API, zły plik),
-         ale bezpieczne też przy "gotowe": process_source czyści stare akapity
-         przed ponownym podziałem, więc nie zostaje drugi egzemplarz książki. #}
-      <form method="post" action="/zrodla/{{ z.id }}/przetworz" style="display:inline">
-        <button type="submit" class="drugorzedny" style="padding:0.15rem 0.5rem; font-size:0.8rem;" title="Przetwórz źródło od nowa">↻ ponów</button>
-      </form>
-      {# Edycja od razu z listy - żeby literówkę w temacie dało się poprawić
-         bez wchodzenia w książkę. #}
-      <button type="button" class="drugorzedny" style="padding:0.15rem 0.5rem; font-size:0.8rem;"
-        data-edytuj="edycja-zrodlo-{{ z.id }}"
-        title="Edytuj tytuł, autora, tematy{% if z.kind == 'text' %} albo treść{% endif %}">✎ edytuj</button>
-    </td>
-  </tr>
-  {% endfor %}
-</table>
-{% if starsze %}
-<p><a href="/zrodla?ile={{ nastepne }}{% if szukaj %}&szukaj={{ szukaj }}{% endif %}{% if etykieta %}&etykieta={{ etykieta }}{% endif %}">Pokaż więcej ({{ starsze }})</a></p>
-{% endif %}
-{% elif szukaj or etykieta %}
-<p class="pusto">Nic nie pasuje. <a href="/zrodla">Pokaż wszystkie ({{ wszystkich }})</a></p>
-{% else %}
-<p class="pusto">Nie ma jeszcze żadnych źródeł.</p>
-{% endif %}
-
-{# Okna edycji - poza tabelą, żeby <dialog> nie siedział w środku <td>. Jedno
-   na źródło, otwierane przyciskiem "✎ edytuj" z wiersza wyżej. #}
+{# Okna edycji - jedno na źródło, otwierane przyciskiem "Edytuj" z karty wyżej. #}
 {% for z in zrodla %}
 <dialog class="okno-edycji" id="edycja-zrodlo-{{ z.id }}">
   <form method="post" action="/zrodla/{{ z.id }}/edytuj">
@@ -145,6 +197,10 @@
     <div class="pole">
       <label for="autor-{{ z.id }}">Autor</label>
       <input type="text" id="autor-{{ z.id }}" name="autor" value="{{ z.author or '' }}">
+    </div>
+    <div class="pole">
+      <label for="opis-{{ z.id }}">Opis</label>
+      <input type="text" id="opis-{{ z.id }}" name="opis" value="{{ z.description or '' }}" placeholder="Krótko, o czym jest to źródło - widać na karcie">
     </div>
     {% if z.kind == "text" %}
     <div class="pole">
@@ -163,8 +219,8 @@
 {% endfor %}
 
 <script>
-  // Otwieranie i zamykanie okien edycji - te same atrybuty co w oknie
-  // poprawy odpowiedzi na ekranie Pytań, żeby zachowanie było spójne.
+  // Otwieranie i zamykanie okien - te same atrybuty co w oknie poprawy
+  // odpowiedzi na ekranie Pytań, żeby zachowanie było spójne w całym panelu.
   document.querySelectorAll('[data-edytuj]').forEach(function (przycisk) {
     przycisk.addEventListener('click', function () {
       document.getElementById(przycisk.dataset.edytuj).showModal();
@@ -180,5 +236,10 @@
       if (zdarzenie.target === okno) { okno.close(); }
     });
   });
+  {% if blad %}
+  // Blad walidacji z poprzedniego zgloszenia - okno dodawania ma sie otworzyc
+  // od razu, zeby nie trzeba bylo go szukac po powrocie z przekierowania.
+  document.getElementById('okno-dodaj').showModal();
+  {% endif %}
 </script>
 {% endblock %}

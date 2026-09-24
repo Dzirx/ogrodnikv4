@@ -589,6 +589,7 @@ async def dodaj_zrodlo(
     tytul: str = Form(...),
     etykiety: str = Form(""),
     autor: str = Form(""),
+    opis: str = Form(""),
     plik: UploadFile | None = None,
     tekst: str = Form(""),
 ):
@@ -607,6 +608,7 @@ async def dodaj_zrodlo(
         kind="pdf" if ma_plik else "text",
         labels=[e for e in etykiety.split(",") if e.strip()],
         author=autor or None,
+        description=opis.strip() or None,
     )
     queue.enqueue(przetworz_zrodlo, source_id, job_timeout=3600)
     return RedirectResponse("/zrodla", status_code=303)
@@ -685,10 +687,11 @@ def edytuj_zrodlo(
     tytul: str = Form(...),
     etykiety: str = Form(""),
     autor: str = Form(""),
+    opis: str = Form(""),
     tekst: str = Form(""),
     db: Session = Depends(get_db),
 ):
-    """Poprawka tytułu, autora i tematów - a dla wklejonego tekstu, samej treści.
+    """Poprawka tytułu, autora, opisu i tematów - a dla wklejonego tekstu, samej treści.
 
     Tematy zastępujemy w całości, nie dopisujemy: to jest poprawka literówki,
     nie drugi formularz dodawania. Zmiana treści (tylko źródła bez pliku PDF)
@@ -703,6 +706,7 @@ def edytuj_zrodlo(
 
     source.title = tytul.strip()[:512] or source.title
     source.author = autor.strip() or None
+    source.description = opis.strip() or None
 
     db.query(SourceLabel).filter_by(source_id=source_id).delete()
     attach_labels(db, source, [e for e in etykiety.split(",") if e.strip()])
