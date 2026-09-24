@@ -57,11 +57,18 @@ Dla każdego faktu podaj:
 Zasady:
 - Tylko to, co jest w akapitach. Zero własnej wiedzy.
 - Tylko to, co dotyczy pytania. Akapit o czymś innym pomiń.
+- Pytanie nazywa konkretną roślinę (albo szkodnika, chorobę), a akapit — sądząc po "source"
+  (tytule książki) i treści — dotyczy innej, konkretnej rośliny: pomiń, choćby ogólny temat
+  brzmiał tak samo. "Utrzymuj równomierną wilgotność gleby" z książki o pomidorach nie jest
+  faktem o papryce, nawet jeśli obie rośliny mają podobne potrzeby — książka o tym nie pisze,
+  a Ty piszesz tylko to, co jest w akapitach. Akapit bez nazwy żadnej konkretnej rośliny
+  (ogólna zasada uprawy) tej reguły nie łapie.
 - Akapit, który dotyczy tematu choćby częściowo, daje fakt. Nie odrzucaj go dlatego,
   że nie odpowiada na pytanie w całości — od składania odpowiedzi jest kto inny.
 - Pustą listę zwracasz WYŁĄCZNIE wtedy, gdy żaden z podanych akapitów nie mówi nic
   na ten temat. To rzadki przypadek: akapity zostały już wybrane pod to pytanie,
-  więc zwykle mówią o nim sporo."""
+  więc zwykle mówią o nim sporo. Odrzucenie WSZYSTKICH akapitów z powodu niezgodności
+  rośliny nie jest rzadkie - to ma prawo się zdarzyć całej książce naraz."""
 
 
 PISANIE_PROMPT = """Piszesz dla Anielskich Ogrodów. Ktoś zadał pytanie, a Ty odpowiadasz —
